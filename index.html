@@ -44,6 +44,8 @@ let rings
 let ringCount
 
 // -------- AUDIO --------
+// Web Audio APIのコンテキストを作成（ブラウザ標準機能なので追加準備不要）
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 const atkFiles = [
 "audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3",
@@ -63,64 +65,75 @@ const midiFiles = [
 "midi/melody5.mid"
 ]
 
-let attackSound
-let clearSound
+let atkBuffer = null; 
+let clearSound;
 
 let melodyNotes=[]
 let melodyIndex=0
 
-let baseNote=60
+// C3(48)を基準にする
+let baseNote=48
 
 function randomChoice(arr){
 return arr[Math.floor(Math.random()*arr.length)]
 }
 
+// 修正：再生速度を計算する関数
 function midiToRate(note){
 return Math.pow(2,(note-baseNote)/12)
 }
 
-async function loadMidi(file){
+// 修正：atkファイルをAudioBufferとして読み込む
+async function loadAtkSound(url) {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    atkBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+}
 
+async function loadMidi(file){
 const res = await fetch(file)
 const buffer = await res.arrayBuffer()
-
 const midi = new Midi(buffer)
-
 const track = midi.tracks[0]
-
 melodyNotes = track.notes.map(n=>n.midi)
-
 melodyIndex = 0
 }
 
+// 修正：ピッチ変更を確実に反映させる再生処理
 function collisionSound(){
+if(!atkBuffer || melodyNotes.length===0) return
 
-if(melodyNotes.length===0) return
-
-const note = melodyNotes[melodyIndex]
-
-const rate = midiToRate(note)
-
-const s = attackSound.cloneNode()
-
-s.playbackRate = rate
-s.play()
-
-melodyIndex++
-
-if(melodyIndex>=melodyNotes.length){
-melodyIndex=0
+// ブラウザの音再生制限対策
+if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
 }
 
+const note = melodyNotes[melodyIndex]
+const rate = midiToRate(note)
+
+// AudioBufferSourceNodeを使って再生（これならplaybackRateが即座に効く）
+const source = audioCtx.createBufferSource();
+source.buffer = atkBuffer;
+source.playbackRate.value = rate; 
+source.connect(audioCtx.destination);
+source.start(0);
+
+melodyIndex = (melodyIndex + 1) % melodyNotes.length;
 }
 
 function passSound(){
-
 const s = clearSound.cloneNode()
 s.play()
-
 }
 
+// 画面クリックでAudioContextを有効化（必須）
+window.addEventListener('mousedown', () => {
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+});
+
+  
 // -------- COLOR --------
 
 function randomColor(){
@@ -218,9 +231,8 @@ colorB:colorB
 
 // AUDIO INIT
 
-attackSound = new Audio(randomChoice(atkFiles))
+loadAtkSound(randomChoice(atkFiles)) // attackSoundではなくloadAtkSoundを使う
 clearSound = new Audio(randomChoice(clrFiles))
-
 loadMidi(randomChoice(midiFiles))
 
 }
