@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>Ring Escape</title>
 
+<script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
+
 <style>
 body{
 margin:0;
@@ -43,42 +45,80 @@ let ringCount
 
 // -------- AUDIO --------
 
-let audioCtx
+const atkFiles = [
+"audio/atk1.wav","audio/atk2.wav","audio/atk3.wav","audio/atk4.wav",
+"audio/atk5.wav","audio/atk6.wav","audio/atk7.wav","audio/atk8.wav"
+]
 
-function initAudio(){
-if(!audioCtx){
-audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+const clrFiles = [
+"audio/clr1.wav","audio/clr2.wav","audio/clr3.wav","audio/clr4.wav",
+"audio/clr5.wav","audio/clr6.wav","audio/clr7.wav","audio/clr8.wav"
+]
+
+const midiFiles = [
+"midi/melody1.mid",
+"midi/melody2.mid",
+"midi/melody3.mid",
+"midi/melody4.mid",
+"midi/melody5.mid"
+]
+
+let attackSound
+let clearSound
+
+let melodyNotes=[]
+let melodyIndex=0
+
+let baseNote=60
+
+function randomChoice(arr){
+return arr[Math.floor(Math.random()*arr.length)]
 }
+
+function midiToRate(note){
+return Math.pow(2,(note-baseNote)/12)
 }
 
-function playBeep(freq,duration){
+async function loadMidi(file){
 
-initAudio()
+const res = await fetch(file)
+const buffer = await res.arrayBuffer()
 
-const osc = audioCtx.createOscillator()
-const gain = audioCtx.createGain()
+const midi = new Midi(buffer)
 
-osc.frequency.value = freq
-osc.type = "sine"
+const track = midi.tracks[0]
 
-gain.gain.value = 0.15
+melodyNotes = track.notes.map(n=>n.midi)
 
-osc.connect(gain)
-gain.connect(audioCtx.destination)
-
-osc.start()
-osc.stop(audioCtx.currentTime + duration)
-
+melodyIndex = 0
 }
 
-// 衝突音
 function collisionSound(){
-playBeep(180,0.05)
+
+if(melodyNotes.length===0) return
+
+const note = melodyNotes[melodyIndex]
+
+const rate = midiToRate(note)
+
+const s = attackSound.cloneNode()
+
+s.playbackRate = rate
+s.play()
+
+melodyIndex++
+
+if(melodyIndex>=melodyNotes.length){
+melodyIndex=0
 }
 
-// 貫通音
+}
+
 function passSound(){
-playBeep(600,0.07)
+
+const s = clearSound.cloneNode()
+s.play()
+
 }
 
 // -------- COLOR --------
@@ -175,6 +215,13 @@ colorB:colorB
 })
 
 }
+
+// AUDIO INIT
+
+attackSound = new Audio(randomChoice(atkFiles))
+clearSound = new Audio(randomChoice(clrFiles))
+
+loadMidi(randomChoice(midiFiles))
 
 }
 
