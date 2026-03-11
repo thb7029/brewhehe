@@ -17,16 +17,16 @@
         .btn.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
         
         #m { top: 20px; }
-        #d-btn { top: 65px; } /* サウンドボタンの下 */
+        #d-btn { top: 65px; }
 
         #debug-info { 
             position: absolute; top: 110px; left: 20px; color: #0f0; font-family: monospace; font-size: 11px;
             background: rgba(0, 0, 0, 0.5); padding: 5px; pointer-events: none; border-left: 2px solid #0f0;
-            display: none; /* 初期は非表示 */
+            display: none;
         }
         #hint { 
             position: absolute; bottom: 20px; left: 20px; color: #444; font-size: 10px;
-            letter-spacing: 0.5px; pointer-events: none; user-select: none;
+            line-height: 1.4; letter-spacing: 0.5px; pointer-events: none; user-select: none;
         }
     </style>
 </head>
@@ -36,7 +36,14 @@
 <div id="m" class="btn">SOUND: OFF</div>
 <div id="d-btn" class="btn">DEBUG: OFF</div>
 <div id="debug-info">DEBUG MODE</div>
-<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.36)</div>
+<div id="hint">
+    (ver 0.37: Same)<br>
+    (ver 0.36: Update debug mode.)<br>
+    (ver 0.35: Debug collision bug.)<br>
+    (ver 0.25: Added debug mode.)<br>
+    (ver 0.2: Adjusting the ring display.)<br>
+    (ver 0.1: Set the ring to destroy after 25 hits to prevent stack bugs.)
+</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -171,6 +178,7 @@ function physicsStep() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const nx = dx / dist, ny = dy / dist;
     
+    // 絶対的空間判定：最短距離にあるリング一つを選定
     const closestRing = rings.reduce((prev, curr) => {
         return (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev;
     });
@@ -178,6 +186,7 @@ function physicsStep() {
     currentTargetIndex = closestRing.index;
     const diff = dist - closestRing.r;
 
+    // A: 脱出・通過判定 (マージンを持たせ境界線をクリアした瞬間にワープ)
     if (diff > ball.r - 1) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
@@ -190,11 +199,13 @@ function physicsStep() {
                 closestRing.passed = true;
             }
             closestRing.shouldRemove = true;
+            // 次のリングへの干渉を防ぐための脱出記録と微小位置補正
             ball.lastPassedRadius = closestRing.r + ball.r + 2;
             ball.x = cx + nx * (closestRing.r + ball.r + 3);
             ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
     } 
+    // B: 衝突判定 (内側ラインでの反射)
     else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
@@ -204,60 +215,3 @@ function physicsStep() {
         if (!inGap && ball.cooldown === 0) {
             const dot = ball.vx * nx + ball.vy * ny;
             if (dot > 0) {
-                closestRing.hitCount++;
-                let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                if (speed < ball.maxSpeed) speed *= 1.05;
-
-                ball.vx -= 2 * dot * nx;
-                ball.vy -= 2 * dot * ny;
-
-                const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                ball.vx = (ball.vx / newSpeed) * speed;
-                ball.vy = (ball.vy / newSpeed) * speed;
-
-                ball.x = cx + nx * (closestRing.r - ball.r - 2);
-                ball.y = cy + ny * (closestRing.r - ball.r - 2);
-                ball.cooldown = 2;
-                collisionSound();
-            }
-        }
-    }
-
-    if (closestRing.shouldRemove) {
-        rings = rings.filter(r => !r.shouldRemove);
-    }
-}
-
-function update() {
-    for (let i = 0; i < steps; i++) physicsStep();
-    if (isDebug) {
-        debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>REMAINING  : ${rings.length}<br>TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}`;
-    }
-    if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    rings.forEach(r => {
-        let hue = (r.colorMode === "alternate") ? (r.index % 2 === 0 ? r.colorA : r.colorB) : r.colorA + (r.colorB - r.colorA) * (r.index / (totalRingsAtStart - 1 || 1));
-        ctx.beginPath();
-        ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
-        
-        // デバッグONの時のみ強調表示
-        const isTarget = isDebug && (r.index === currentTargetIndex);
-        ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${isTarget ? r.light + 20 : r.light}%)`;
-        ctx.lineWidth = isTarget ? 6 : 4;
-        ctx.stroke();
-    });
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-    ctx.fillStyle = "white";
-    ctx.fill();
-}
-
-function loop() { update(); draw(); requestAnimationFrame(loop); }
-reset();
-loop();
-</script>
-</body>
-</html>
