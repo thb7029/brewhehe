@@ -1,101 +1,83 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>🗿</title>
+    <meta charset="UTF-8"><title>🗿</title>
     <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        canvas { background: #111; cursor: pointer; }
-        #m { position: absolute; bottom: 20px; right: 20px; color: #444; font: 12px monospace; cursor: pointer; border: 1px solid #444; padding: 5px 10px; transition: 0.3s; z-index: 10; }
-        #m.on { color: white; border-color: white; }
+        canvas { background: #111; }
     </style>
 </head>
 <body>
-
 <canvas id="c" width="600" height="600"></canvas>
-<div id="m">SOUND: OFF</div>
-
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
-const cx = 300, cy = 300, gravity = 0.1, steps = 4, res = 1.0; // stepsを4に上げ精度向上
-let ball, rings, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0, isMuted = true;
+const cx = 300, cy = 300, gravity = 0.1, steps = 3, res = 1.0;
+let ball, rings, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0;
 
+// --- AUDIO SETUP ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const mainGain = audioCtx.createGain();
-mainGain.gain.value = 0.4; // 【修正3】音量を40%に設定
-mainGain.connect(audioCtx.destination);
-
-const mBtn = document.getElementById("m");
-const files = {
-    atk: Array.from({length:8}, (_,i) => `audio/atk${i+1}.mp3`),
-    clr: Array.from({length:8}, (_,i) => `audio/clr${i+1}.mp3`),
-    mid: Array.from({length:5}, (_,i) => `midi/melody${i+1}.mid`)
-};
+const gainNode = audioCtx.createGain();
+gainNode.gain.value = 0.5; // 音量調整
+gainNode.connect(audioCtx.destination);
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
-
-// --- AUDIO LOGIC ---
-async function loadAtk(url) {
-    atkBuffer = null; // 【修正1】ロード開始時に前のバッファを破棄
-    const res = await fetch(url), buf = await res.arrayBuffer();
-    atkBuffer = await audioCtx.decodeAudioData(buf);
-}
-
-async function loadMidi(url) {
-    const res = await fetch(url), buf = await res.arrayBuffer();
-    const midi = new Midi(buf);
-    melodyNotes = midi.tracks[0].notes.map(n => n.midi);
+const loadAtk = async url => {
+    const r = await fetch(url), b = await r.arrayBuffer();
+    atkBuffer = await audioCtx.decodeAudioData(b);
+};
+const loadMidi = async url => {
+    const r = await fetch(url), b = await r.arrayBuffer();
+    melodyNotes = (new Midi(b)).tracks[0].notes.map(n => n.midi);
     melodyIndex = 0;
-}
+};
 
 function playAtk() {
-    if (isMuted || !atkBuffer || !melodyNotes.length) return;
+    if (!atkBuffer || !melodyNotes.length) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     const s = audioCtx.createBufferSource();
     s.buffer = atkBuffer;
     s.playbackRate.value = Math.pow(2, (melodyNotes[melodyIndex] - 48) / 12);
-    s.connect(mainGain); // ゲインに接続
+    s.connect(gainNode);
     s.start(0);
     melodyIndex = (melodyIndex + 1) % melodyNotes.length;
 }
 
 function playClr() {
-    if (isMuted) return;
+    if (!clearSound) return;
     const s = clearSound.cloneNode();
-    s.volume = 0.4; // Audioタグの音量も調整
+    s.volume = 0.5;
     s.play();
 }
 
-mBtn.onclick = () => {
-    isMuted = !isMuted;
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    mBtn.innerText = `SOUND: ${isMuted ? 'OFF' : 'ON'}`;
-    mBtn.className = isMuted ? '' : 'on';
-};
+window.onclick = () => audioCtx.state === 'suspended' && audioCtx.resume();
 
-// --- CORE ---
+// --- LOGIC ---
 function reset() {
     const ang = Math.random() * Math.PI * 2;
-    ball = { x: cx, y: cy, vx: Math.cos(ang) * 0.8, vy: Math.sin(ang) * 0.8, r: 5, cd: 0 };
+    ball = { x: cx, y: cy, vx: Math.cos(ang) * 0.7, vy: Math.sin(ang) * 0.7, r: 5, cd: 0 };
     rings = [];
-    const count = 6 + Math.floor(Math.random() * 10);
-    const hueA = Math.random() * 360, hueB = hueA + 80;
-    const bSpd = Math.random() * 0.01 + 0.01;
+    
+    const count = 6 + Math.floor(Math.random() * 13), hA = Math.random() * 360, hB = hA + (Math.random() * 60 + 40);
+    const bSpd = Math.random() * 0.02 + 0.015, mode = Math.floor(Math.random() * 3), isFaster = Math.random() < 0.5;
 
     for (let i = 0; i < count; i++) {
+        const dir = mode === 2 ? (i % 2 ? 1 : -1) : (mode === 0 ? 1 : -1);
+        const factor = isFaster ? (1 + i * 0.15) : (1 / (1 + i * 0.15));
         rings.push({
-            r: 65 + (195 / (count - 1)) * i,
+            r: 60 + (200 / (count - 1)) * i,
             gap: Math.random() * Math.PI * 2,
-            gapSize: Math.PI / 4, // 穴を少し狭くして判定を安定化
+            gapSize: Math.PI / 3,
             angle: 0,
-            speed: bSpd * (1 + i * 0.1) * (Math.random() > 0.5 ? 1 : -1),
-            hue: hueA + (hueB - hueA) * (i / count),
-            passed: false
+            speed: bSpd * factor * dir,
+            hue: hA + (hB - hA) * (i / (count - 1)),
+            passed: false,
+            alt: Math.random() < 0.5
         });
     }
-    loadAtk(pick(files.atk));
-    clearSound = new Audio(pick(files.clr));
-    loadMidi(pick(files.mid));
+    loadAtk(pick(Array.from({length: 8}, (_, i) => `audio/atk${i+1}.mp3`)));
+    clearSound = new Audio(pick(Array.from({length: 8}, (_, i) => `audio/clr${i+1}.mp3`)));
+    loadMidi(pick(Array.from({length: 5}, (_, i) => `midi/melody${i+1}.mid`)));
 }
 
 function physics() {
@@ -108,40 +90,22 @@ function physics() {
     for (let i = rings.length - 1; i >= 0; i--) {
         const r = rings[i];
         r.angle += r.speed;
-        
-        if (dist > r.r + 5) { rings.splice(i, 1); continue; } // 完全に外に出たら削除
+        if (dist > r.r) { rings.splice(i, 1); continue; }
 
-        // 【修正2】判定：球体の表面がリングの境界を跨いだ瞬間をチェック
-        if (dist > r.r - ball.r && dist < r.r + ball.r) {
-            const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
-            const s = (r.gap + r.angle + Math.PI * 10) % (Math.PI * 2);
+        if (dist > r.r - ball.r) {
+            const a = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+            const s = (r.gap + r.angle + Math.PI * 2) % (Math.PI * 2);
             const e = (s + r.gapSize) % (Math.PI * 2);
             const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
             if (inGap) {
                 if (!r.passed) { playClr(); r.passed = true; }
             } else if (ball.cd === 0) {
-                const nx = dx / dist, ny = dy / dist;
-                
-                // 現在の速さ（エネルギー）を記録
-                const speedBefore = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                
-                // 反射ベクトル計算 (R = V - 2 * (V・N) * N)
-                const dot = ball.vx * nx + ball.vy * ny;
-                ball.vx -= 2 * dot * nx;
-                ball.vy -= 2 * dot * ny;
-
-                // 【重要】速さを衝突前と全く同じに強制リセット（減衰を完全に殺す）
-                const speedAfter = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                ball.vx = (ball.vx / speedAfter) * speedBefore;
-                ball.vy = (ball.vy / speedAfter) * speedBefore;
-
-                // リングの内側へ押し戻す（少し余裕を持たせて1.0離す）
-                ball.x = cx + nx * (r.r - ball.r - 1.0); 
-                ball.y = cy + ny * (r.r - ball.r - 1.0);
-                
-                ball.cd = 3; 
-                playAtk();
+                const nx = dx / dist, ny = dy / dist, dot = ball.vx * nx + ball.vy * ny;
+                ball.vx -= (1 + res) * dot * nx;
+                ball.vy -= (1 + res) * dot * ny;
+                ball.x = cx + nx * (r.r - ball.r); ball.y = cy + ny * (r.r - ball.r);
+                ball.cd = 2; playAtk();
             }
         }
     }
@@ -149,18 +113,16 @@ function physics() {
 
 function loop() {
     for (let i = 0; i < steps; i++) physics();
-    if (!rings.length && (ball.x < -50 || ball.x > 650 || ball.y < -50 || ball.y > 650)) reset();
-
     ctx.clearRect(0, 0, 600, 600);
     rings.forEach(r => {
         ctx.beginPath();
-        // 穴を空けるための描画（穴の開始〜終了までを描画しない）
-        ctx.arc(cx, cy, r.r, r.gap + r.gapSize + r.angle, r.gap + r.angle); 
+        ctx.arc(cx, cy, r.r, r.gap + r.gapSize + r.angle, r.gap + Math.PI * 2 + r.angle);
         ctx.strokeStyle = `hsl(${r.hue}, 70%, 60%)`;
         ctx.lineWidth = 4; ctx.stroke();
     });
     ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
     ctx.fillStyle = "white"; ctx.fill();
+    if (!rings.length && (ball.x < 0 || ball.x > 600 || ball.y < 0 || ball.y > 600)) reset();
     requestAnimationFrame(loop);
 }
 
