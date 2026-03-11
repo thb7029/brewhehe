@@ -145,12 +145,12 @@ function reset() {
     const colorA = {
         h: Math.random() * 360,
         s: 20 + Math.random() * 80,
-        l: 25 + Math.random() * 75
+        l: 20 + Math.random() * 55
     };
     const colorB = {
         h: (colorA.h + (40 + Math.random() * 140)) % 360,
         s: 20 + Math.random() * 80,
-        l: 25 + Math.random() * 75
+        l: 20 + Math.random() * 55
     };
 
     const isGradient = Math.random() < 0.5;
@@ -295,8 +295,6 @@ function draw() {
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
     ctx.fillStyle = "white";
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = "white";
     ctx.fill();
     ctx.shadowBlur = 0;
 }
