@@ -155,6 +155,11 @@ function reset() {
     loadMidi(pick(midiFiles));
 }
 
+const normalizeAngle = (a) => {
+    const twoPi = Math.PI * 2;
+    return ((a % twoPi) + twoPi) % twoPi;
+};
+
 function physicsStep() {
     ball.vy += gravity / steps;
     ball.x += ball.vx;
@@ -169,47 +174,74 @@ function physicsStep() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const nx = dx / dist, ny = dy / dist;
     
+    // 最も近いリングを探す
     const closestRing = rings.reduce((prev, curr) => (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev);
     currentTargetIndex = closestRing.index;
     currentHitCount = closestRing.hitCount;
 
-    const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
-    const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
-    const e = (s + closestRing.gapSize) % (Math.PI * 2);
-    const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
+    // 現在のボールの角度
+    const ballAngle = normalizeAngle(Math.atan2(dy, dx));
+    // 隙間の開始と終了
+    const gapStart = normalizeAngle(closestRing.gap + closestRing.angle);
+    const gapEnd = normalizeAngle(gapStart + closestRing.gapSize);
 
-    // 強制破壊判定（穴にいてもいなくても25回叩けば壊れる、または穴を越えたら壊れる）
-    if (closestRing.hitCount >= 25 || (inGap && dist > closestRing.r + ball.r - 1)) {
-        if (dist > closestRing.r - ball.r) {
-            if (!closestRing.passed) { passSound(); closestRing.passed = true; }
+    // 隙間にいるかどうかの正確な判定
+    let inGap = false;
+    if (gapStart < gapEnd) {
+        inGap = ballAngle >= gapStart && ballAngle <= gapEnd;
+    } else {
+        // 0/2PIを跨いでいる場合
+        inGap = ballAngle >= gapStart || ballAngle <= gapEnd;
+    }
+
+    // 1. 通過判定 (隙間にいて、かつリングの半径を越えようとしている時)
+    if (inGap && dist > closestRing.r) {
+        if (!closestRing.passed) {
+            passSound();
+            closestRing.passed = true;
             closestRing.shouldRemove = true;
-            ball.lastPassedRadius = closestRing.r + ball.r + 2;
-            ball.x = cx + nx * (closestRing.r + ball.r + 3);
-            ball.y = cy + ny * (closestRing.r + ball.r + 3);
+            // 通過した後は少し外側に押し出す
+            ball.x = cx + nx * (closestRing.r + ball.r + 2);
+            ball.y = cy + ny * (closestRing.r + ball.r + 2);
         }
     } 
-    // 通常の衝突判定
-    else if (!inGap && Math.abs(dist - closestRing.r) < ball.r && dist > ball.lastPassedRadius) {
+    // 2. 衝突判定 (隙間にいない、かつリングの境界に触れた時)
+    else if (!inGap && Math.abs(dist - closestRing.r) < ball.r) {
         const dot = ball.vx * nx + ball.vy * ny;
-        if (dot > 0 && ball.cooldown === 0) {
+        // 外側に向かって進んでいて、かつリングの内側にいる場合のみ反射
+        if (dot > 0 && dist < closestRing.r && ball.cooldown === 0) {
             closestRing.hitCount++;
+            
+            // 25回ヒットで強制破壊
+            if (closestRing.hitCount >= 25) {
+                closestRing.shouldRemove = true;
+                return;
+            }
+
             let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (speed < ball.maxSpeed) speed *= 1.05;
+
+            // 反射ベクトル計算
             ball.vx -= 2 * dot * nx;
             ball.vy -= 2 * dot * ny;
+
+            // 速度の再適用
             const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             ball.vx = (ball.vx / newSpeed) * speed;
             ball.vy = (ball.vy / newSpeed) * speed;
-            ball.x = cx + nx * (closestRing.r - ball.r - 2);
-            ball.y = cy + ny * (closestRing.r - ball.r - 2);
+
+            // めり込み防止：リングの少し内側に固定
+            ball.x = cx + nx * (closestRing.r - ball.r - 1);
+            ball.y = cy + ny * (closestRing.r - ball.r - 1);
             ball.cooldown = 2;
             collisionSound();
         }
     }
 
-    if (closestRing.shouldRemove) rings = rings.filter(r => !r.shouldRemove);
+    if (closestRing.shouldRemove) {
+        rings = rings.filter(r => !r.shouldRemove);
+    }
 }
-
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
     if (isDebug) debugEl.innerHTML = `TOTAL: ${totalRingsAtStart}<br>LEFT : ${rings.length}<br>TARGET: ${currentTargetIndex}<br>HIT : ${currentHitCount}/25`;
