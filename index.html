@@ -238,81 +238,80 @@ loadMidi(randomChoice(midiFiles))
 }
 // -------- PHYSICS --------
 
-function physicsStep() {
+function physicsStep(){
     ball.vy += gravityStep;
     ball.x += ball.vx;
     ball.y += ball.vy;
 
-    if (ball.cooldown > 0) ball.cooldown--;
+    if(ball.cooldown > 0) ball.cooldown--;
 
-    for (let ring of rings) {
+    for(let ring of rings) {
         ring.angle += ring.speed;
     }
 
     let dx = ball.x - cx;
     let dy = ball.y - cy;
-    let dist = Math.sqrt(dx * dx + dy * dy);
+    let dist = Math.sqrt(dx*dx + dy*dy);
 
-    for (let i = rings.length - 1; i >= 0; i--) {
+    for(let i = rings.length - 1; i >= 0; i--){
         let ring = rings[i];
 
-        // --- 1. リングを完全に通過した瞬間の判定 ---
-        if (dist > ring.r + ball.r) {
-            // もし「まだ通過音を鳴らしていない」かつ「穴を正しく通っていた」なら
-            if (!ring.passed) {
-                // 通過時の角度をチェック
-                let ang = Math.atan2(dy, dx);
-                let a = (ang + Math.PI * 10) % (Math.PI * 2);
-                let s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
+        // 1. リングを完全に通り抜けた判定
+        if(dist > ring.r + ball.r) {
+            if(!ring.passed) {
+                // 通過判定をここで行う
+                let a = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+                let s = (ring.gap + ring.angle + Math.PI * 2) % (Math.PI * 2);
                 let e = (s + ring.gapSize) % (Math.PI * 2);
                 
-                let inGap = s < e ? (a > s && a < e) : (a > s || a < e);
-                
-                if (inGap) {
+                let inGap = s < e ? (a > s && a < e) : (a > s || a e);
+                if(inGap) {
                     passSound();
                     ring.passed = true;
                 }
             }
-            // リングの外側に完全に出たので配列から削除
             rings.splice(i, 1);
             continue;
         }
 
-        // --- 2. 衝突判定（内側にいる時のみ） ---
-        if (dist > ring.r - ball.r) {
-            let ang = Math.atan2(dy, dx);
-            let a = (ang + Math.PI * 10) % (Math.PI * 2);
-            let s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
+        // 2. 衝突判定（リングの厚みの中にボールがいるか）
+        if(dist > ring.r - ball.r && dist < ring.r + ball.r) {
+            let a = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+            let s = (ring.gap + ring.angle + Math.PI * 2) % (Math.PI * 2);
             let e = (s + ring.gapSize) % (Math.PI * 2);
 
             let inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
-            // 穴の中にいない、かつクールダウン中でなければ跳ね返す
-            if (!inGap && ball.cooldown === 0) {
+            // 穴の中に「いない」時だけ跳ね返す
+            if(!inGap && ball.cooldown === 0) {
                 let nx = dx / dist;
                 let ny = dy / dist;
 
                 let speedBefore = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 let dot = ball.vx * nx + ball.vy * ny;
 
+                // 反射（法線ベクトル nx, ny を使用）
                 ball.vx -= 2 * dot * nx;
                 ball.vy -= 2 * dot * ny;
 
+                // 速度の維持（無限反発）
                 let speedAfter = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                if (speedAfter > 0) {
+                if(speedAfter > 0) {
                     ball.vx = (ball.vx / speedAfter) * speedBefore;
                     ball.vy = (ball.vy / speedAfter) * speedBefore;
                 }
 
-                ball.x = cx + nx * (ring.r - ball.r - 1);
-                ball.y = cy + ny * (ring.r - ball.r - 1);
+                // 強制的に内側に押し戻して、次のフレームで再衝突するのを防ぐ
+                ball.x = cx + nx * (ring.r - ball.r - 2);
+                ball.y = cy + ny * (ring.r - ball.r - 2);
 
-                ball.cooldown = 3;
+                ball.cooldown = 2;
                 collisionSound();
             }
         }
     }
 }
+
 // -------- UPDATE --------
 
 function update(){
@@ -333,48 +332,36 @@ reset()
 // -------- DRAW --------
 
 function draw(){
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-ctx.clearRect(0,0,canvas.width,canvas.height)
+    for(let ring of rings){
+        let color;
+        if(ring.colorMode === "alternate"){
+            color = ring.index % 2 === 0 ? `hsl(${ring.colorA},70%,60%)` : `hsl(${ring.colorB},70%,60%)`;
+        } else {
+            const t = ring.index / (ringCount - 1);
+            const hue = ring.colorA * (1 - t) + ring.colorB * t;
+            color = `hsl(${hue}, 70%, 60%)`;
+        }
 
-for(let ring of rings){
+        ctx.beginPath();
+        // 重要：判定ロジック(s, e)と同じ角度で「線」を描く
+        // 穴の開始(gap + angle + gapSize)から、穴の開始(gap + angle)まで「ぐるっと一周」描く
+        let startAngle = ring.gap + ring.angle + ring.gapSize;
+        let endAngle = ring.gap + ring.angle;
 
-let color
+        ctx.arc(cx, cy, ring.r, startAngle, endAngle, false); 
 
-if(ring.colorMode==="alternate"){
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+    }
 
-color = ring.index%2===0
-? `hsl(${ring.colorA},70%,60%)`
-: `hsl(${ring.colorB},70%,60%)`
-
-}else{
-
-const t = ring.index/(ringCount-1)
-const hue = ring.colorA*(1-t) + ring.colorB*t
-
-color = `hsl(${hue},70%,60%)`
-
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = "white";
+    ctx.fill();
 }
-
-ctx.beginPath()
-
-let start = ring.gap + ring.gapSize + ring.angle
-let end = ring.gap + Math.PI*2 + ring.angle
-
-ctx.arc(cx,cy,ring.r,start,end)
-
-ctx.strokeStyle=color
-ctx.lineWidth=4
-ctx.stroke()
-
-}
-
-ctx.beginPath()
-ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2)
-ctx.fillStyle="white"
-ctx.fill()
-
-}
-
 // -------- LOOP --------
 
 function loop(){
