@@ -25,7 +25,7 @@
 
 <canvas id="c" width="600" height="600"></canvas>
 <div id="m">SOUND: OFF</div>
-<div id="hint">Rings shatter after 25 hits to prevent stuck.</div>
+<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.2)</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -89,7 +89,7 @@ function reset() {
         x: cx, y: cy, 
         vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
         r: 5, cooldown: 0, 
-        lastPassedRadius: 0, // 最後に抜けた円の半径を記録
+        lastPassedRadius: 0,
         baseSpeed: initSpeed, maxSpeed: initSpeed * 2.5 
     };
     rings = [];
@@ -138,52 +138,52 @@ function physicsStep() {
 
     for (let ring of rings) ring.angle += ring.speed;
 
-    for (let i = 0; i < rings.length; i++) {
-        const ring = rings[i];
-        if (ring.shouldRemove) continue;
+    if (rings.length === 0) return;
 
-        let dx = ball.x - cx, dy = ball.y - cy;
-        let dist = Math.sqrt(dx * dx + dy * dy);
+    // 【絶対的空間判定】最新の距離に基づき、最も近いリングを1つだけ選ぶ
+    const dx = ball.x - cx, dy = ball.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    const closestRing = rings.reduce((prev, curr) => {
+        return (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev;
+    });
 
-        // A: 通過（脱出）判定
-        if (dist > ring.r + ball.r) {
-            if (!ring.passed) {
-                const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
-                const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
-                const e = (s + ring.gapSize) % (Math.PI * 2);
-                const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
-                if (inGap) { 
-                    passSound(); 
-                    ring.passed = true;
-                    // 無敵時間の代わりに「今抜けた半径」を記録
-                    ball.lastPassedRadius = ring.r;
-                }
-            }
-            ring.shouldRemove = true;
-            continue;
-        }
+    // そのリングの判定圏内（±ボール半径）にいるかチェック
+    const diff = dist - closestRing.r;
 
-        // B: 衝突判定
-        // 修正：最後の通過半径を完全に超えるまでは、次のリングの衝突判定を行わない
-        if (dist > ring.r - ball.r && dist > ball.lastPassedRadius + ball.r) {
+    // 1. 通過（脱出）判定：リングの外側ラインを越えた場合
+    if (diff > ball.r) {
+        if (!closestRing.passed) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
-            const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
-            const e = (s + ring.gapSize) % (Math.PI * 2);
+            const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
+            const e = (s + closestRing.gapSize) % (Math.PI * 2);
             const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
+            if (inGap) { 
+                passSound(); 
+                closestRing.passed = true;
+                ball.lastPassedRadius = closestRing.r;
+            }
+        }
+        closestRing.shouldRemove = true;
+    } 
+    // 2. 衝突判定：リングの内側ラインに触れており、かつ直前の円を完全に脱出している場合
+    else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius + ball.r) {
+        const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
+        const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
+        const e = (s + closestRing.gapSize) % (Math.PI * 2);
+        const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
-            if (!inGap && ball.cooldown === 0) {
-                const nx = dx / dist, ny = dy / dist;
-                const dot = ball.vx * nx + ball.vy * ny;
+        if (!inGap && ball.cooldown === 0) {
+            const nx = dx / dist, ny = dy / dist;
+            const dot = ball.vx * nx + ball.vy * ny;
 
-                if (dot > 0) {
-                    ring.hitCount++;
-                    if (ring.hitCount >= 25) {
-                        passSound();
-                        ring.shouldRemove = true;
-                        ball.lastPassedRadius = ring.r; // 破壊時もそこまでは無敵
-                        continue;
-                    }
-
+            if (dot > 0) {
+                closestRing.hitCount++;
+                if (closestRing.hitCount >= 25) {
+                    passSound();
+                    closestRing.shouldRemove = true;
+                    ball.lastPassedRadius = closestRing.r;
+                } else {
                     let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     if (speed < ball.maxSpeed) speed *= 1.05;
 
@@ -194,15 +194,20 @@ function physicsStep() {
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
 
-                    ball.x = cx + nx * (ring.r - ball.r - 3);
-                    ball.y = cy + ny * (ring.r - ball.r - 3);
+                    // 位置補正：リングの内側にスナップ
+                    ball.x = cx + nx * (closestRing.r - ball.r - 2);
+                    ball.y = cy + ny * (closestRing.r - ball.r - 2);
                     ball.cooldown = 2;
                     collisionSound();
                 }
             }
         }
     }
-    rings = rings.filter(r => !r.shouldRemove);
+
+    // 削除フラグが立ったリングを掃除
+    if (closestRing.shouldRemove) {
+        rings = rings.filter(r => !r.shouldRemove);
+    }
 }
 
 function update() {
