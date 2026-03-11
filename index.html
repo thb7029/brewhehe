@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>🗿 Rotating Ring Physics 🗿</title>
+    <title>🗿 RESONANCE of MOAI 🗿</title>
     <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
@@ -212,42 +212,51 @@ function physicsStep() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const nx = dx / dist, ny = dy / dist;
 
+    // 最も近いリングを特定
     const closestRing = rings.reduce((prev, curr) => (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev);
     currentTargetIndex = closestRing.index;
     currentHitCount = closestRing.hitCount;
 
+    // --- 角度判定 ---
     const ballAngle = normalizeAngle(Math.atan2(dy, dx));
     const gapStart = normalizeAngle(closestRing.gap + closestRing.angle);
     const gapEnd = normalizeAngle(gapStart + closestRing.gapSize);
 
+    // 隙間にいるかの判定（少し余裕を持たせる）
     let inGap = (gapStart < gapEnd) 
         ? (ballAngle >= gapStart && ballAngle <= gapEnd) 
         : (ballAngle >= gapStart || ballAngle <= gapEnd);
 
-    if (inGap && dist > closestRing.r) {
-        if (!closestRing.passed) {
+    // --- 1. 消去判定（25回衝突 または 隙間を通過） ---
+    // すでに衝突回数が25回を超えている、または隙間にいてリングの外側に突き抜けた場合
+    if (closestRing.hitCount >= 25 || (inGap && dist > closestRing.r)) {
+        // 判定：リングの境界を跨いだ瞬間
+        if (dist > closestRing.r - ball.r) {
             passSound();
-            closestRing.passed = true;
             closestRing.shouldRemove = true;
-            ball.x = cx + nx * (closestRing.r + ball.r + 2);
-            ball.y = cy + ny * (closestRing.r + ball.r + 2);
+            // ボールを確実に外側へ押し出す（スタック防止）
+            ball.x = cx + nx * (closestRing.r + ball.r + 3);
+            ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
     } 
+    // --- 2. 通常の衝突（反射）判定 ---
     else if (!inGap && Math.abs(dist - closestRing.r) < ball.r) {
         const dot = ball.vx * nx + ball.vy * ny;
-        if (dot > 0 && dist < closestRing.r && ball.cooldown === 0) {
+        // 外側に向かって進んでいるときのみ反射
+        if (dot > 0 && ball.cooldown === 0) {
             closestRing.hitCount++;
-            if (closestRing.hitCount >= 25) {
-                closestRing.shouldRemove = true;
-                return;
-            }
+            
             let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (speed < ball.maxSpeed) speed *= 1.05;
+            
             ball.vx -= 2 * dot * nx;
             ball.vy -= 2 * dot * ny;
+            
             const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             ball.vx = (ball.vx / newSpeed) * speed;
             ball.vy = (ball.vy / newSpeed) * speed;
+            
+            // リングの内側に押し戻す
             ball.x = cx + nx * (closestRing.r - ball.r - 2);
             ball.y = cy + ny * (closestRing.r - ball.r - 2);
             ball.cooldown = 2;
@@ -255,10 +264,12 @@ function physicsStep() {
         }
     }
 
-    if (closestRing.shouldRemove) rings = rings.filter(r => !r.shouldRemove);
-}
+    // リングをリストから削除
+    if (closestRing.shouldRemove) {
+        rings = rings.filter(r => r !== closestRing);
+    }
 
-function update() {
+}function update() {
     for (let i = 0; i < steps; i++) physicsStep();
     if (isDebug) debugEl.innerHTML = `TOTAL: ${totalRingsAtStart}<br>LEFT : ${rings.length}<br>TARGET: ${currentTargetIndex}<br>HIT : ${currentHitCount}/25`;
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
