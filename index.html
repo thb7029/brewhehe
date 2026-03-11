@@ -79,7 +79,7 @@ function reset() {
         vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
         r: 5, cooldown: 0, 
         baseSpeed: initSpeed, 
-        maxSpeed: initSpeed * 2.0 // 加速上限200%
+        maxSpeed: initSpeed * 2.5 // 加速上限を250%に強化
     };
     rings = [];
     
@@ -91,18 +91,29 @@ function reset() {
 
     ringCount = 6 + Math.floor(Math.random() * 10);
     const spacing = 200 / (ringCount - 1);
-    const bSpd = Math.random() * 0.01 + 0.015;
+
+    // 中心の基準速度
+    const baseSpeed = Math.random() * 0.025 + 0.01; 
+    
+    // 【修正】stepFactorの絶対値を 0.08 以上にして、必ずズレるように設定
+    let stepFactor = (Math.random() * 0.4) - 0.2; 
+    if (Math.abs(stepFactor) < 0.08) stepFactor = 0.08 * (stepFactor < 0 ? -1 : 1);
+
     const mode = Math.floor(Math.random() * 3);
     const baseGap = Math.random() * Math.PI * 2;
 
     for (let i = 0; i < ringCount; i++) {
         let dir = mode === 2 ? (i % 2 === 0 ? 1 : -1) : (mode === 1 ? -1 : 1);
+        
+        // 外側ほど速くなるか、遅くなるか（必ず一定の差が出る）
+        let currentSpeed = baseSpeed * (1 + i * stepFactor) * dir;
+
         rings.push({
             r: 65 + spacing * i,
             gap: baseGap,
             gapSize: Math.PI / 3,
             angle: 0,
-            speed: bSpd * (1 + i * 0.15) * dir,
+            speed: currentSpeed,
             index: i,
             passed: false,
             colorMode, colorA: hueA, colorB: hueB,
@@ -152,29 +163,28 @@ function physicsStep() {
                 const nx = dx / dist, ny = dy / dist;
                 const dot = ball.vx * nx + ball.vy * ny;
 
-                // 【バグ修正】中心から外側に向かっている（dot > 0）時だけ跳ね返す
                 if (dot > 0) {
                     let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     
-                    // 加速処理（上限200%まで）
-                    if (speed < ball.maxSpeed) speed *= 1.02;
+                    // 【加速強化】当たるたびに 5% 加速
+                    if (speed < ball.maxSpeed) {
+                        speed *= 1.05; 
+                    }
 
-                    // 反射ベクトル計算
                     ball.vx -= 2 * dot * nx;
                     ball.vy -= 2 * dot * ny;
 
-                    // 新しい速度を適用（正規化してspeedを掛ける）
                     const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
 
-                    // めり込み防止（少し内側に押し戻す）
                     ball.x = cx + nx * (ring.r - ball.r - 2);
                     ball.y = cy + ny * (ring.r - ball.r - 2);
 
                     ball.cooldown = 2;
                     collisionSound();
                 }
+            }
             }
         }
     }
