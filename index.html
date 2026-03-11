@@ -7,17 +7,22 @@
     <style>
         body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
         canvas { background: #111; cursor: pointer; }
-        #m { 
-            position: absolute; top: 20px; left: 20px; width: 120px; padding: 10px;
+        .btn { 
+            position: absolute; left: 20px; width: 120px; padding: 10px;
             background: rgba(255, 255, 255, 0.1); color: #888; font-size: 14px; font-weight: bold;
             text-align: center; cursor: pointer; border: 1px solid #444; border-radius: 4px;
             transition: 0.2s; z-index: 10; user-select: none;
         }
-        #m:hover { background: rgba(255, 255, 255, 0.2); }
-        #m.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
-        #debug { 
-            position: absolute; top: 65px; left: 20px; color: #0f0; font-family: monospace; font-size: 11px;
+        .btn:hover { background: rgba(255, 255, 255, 0.2); }
+        .btn.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
+        
+        #m { top: 20px; }
+        #d-btn { top: 65px; } /* サウンドボタンの下 */
+
+        #debug-info { 
+            position: absolute; top: 110px; left: 20px; color: #0f0; font-family: monospace; font-size: 11px;
             background: rgba(0, 0, 0, 0.5); padding: 5px; pointer-events: none; border-left: 2px solid #0f0;
+            display: none; /* 初期は非表示 */
         }
         #hint { 
             position: absolute; bottom: 20px; left: 20px; color: #444; font-size: 10px;
@@ -28,15 +33,20 @@
 <body>
 
 <canvas id="c" width="600" height="600"></canvas>
-<div id="m">SOUND: OFF</div>
-<div id="debug">DEBUG MODE</div>
-<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.25)</div>
+<div id="m" class="btn">SOUND: OFF</div>
+<div id="d-btn" class="btn">DEBUG: OFF</div>
+<div id="debug-info">DEBUG MODE</div>
+<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.36)</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const cx = 300, cy = 300, gravity = 0.1, steps = 4;
-const debugEl = document.getElementById("debug");
-let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0, isMuted = true;
+const debugEl = document.getElementById("debug-info");
+const dBtn = document.getElementById("d-btn");
+const mBtn = document.getElementById("m");
+
+let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0;
+let isMuted = true, isDebug = false;
 let totalRingsAtStart = 0;
 let currentTargetIndex = -1;
 
@@ -45,7 +55,6 @@ const mainGain = audioCtx.createGain();
 mainGain.gain.value = 0.4;
 mainGain.connect(audioCtx.destination);
 
-const mBtn = document.getElementById("m");
 const atkFiles = ["audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3","audio/atk5.mp3","audio/atk6.mp3","audio/atk7.mp3","audio/atk8.mp3"];
 const clrFiles = ["audio/clr1.mp3","audio/clr2.mp3","audio/clr3.mp3","audio/clr4.mp3","audio/clr5.mp3","audio/clr6.mp3","audio/clr7.mp3","audio/clr8.mp3"];
 const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","midi/melody4.mid","midi/melody5.mid"];
@@ -87,7 +96,14 @@ mBtn.onclick = () => {
     isMuted = !isMuted;
     if (audioCtx.state === 'suspended') audioCtx.resume();
     mBtn.innerText = `SOUND: ${isMuted ? 'OFF' : 'ON'}`;
-    mBtn.className = isMuted ? '' : 'on';
+    mBtn.className = isMuted ? 'btn' : 'btn on';
+};
+
+dBtn.onclick = () => {
+    isDebug = !isDebug;
+    dBtn.innerText = `DEBUG: ${isDebug ? 'ON' : 'OFF'}`;
+    dBtn.className = isDebug ? 'btn on' : 'btn';
+    debugEl.style.display = isDebug ? 'block' : 'none';
 };
 
 function reset() {
@@ -144,7 +160,6 @@ function physicsStep() {
     ball.y += ball.vy;
 
     if (ball.cooldown > 0) ball.cooldown--;
-
     for (let ring of rings) ring.angle += ring.speed;
 
     if (rings.length === 0) {
@@ -154,58 +169,56 @@ function physicsStep() {
 
     const dx = ball.x - cx, dy = ball.y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    const nx = dx / dist, ny = dy / dist;
     
     const closestRing = rings.reduce((prev, curr) => {
         return (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev;
     });
 
     currentTargetIndex = closestRing.index;
-
     const diff = dist - closestRing.r;
 
-    if (diff > ball.r) {
-        if (!closestRing.passed) {
-            const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
-            const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
-            const e = (s + closestRing.gapSize) % (Math.PI * 2);
-            const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
-            if (inGap) { 
+    if (diff > ball.r - 1) {
+        const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
+        const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
+        const e = (s + closestRing.gapSize) % (Math.PI * 2);
+        const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
+
+        if (inGap || closestRing.hitCount >= 25) {
+            if (!closestRing.passed) {
                 passSound(); 
                 closestRing.passed = true;
-                ball.lastPassedRadius = closestRing.r;
             }
+            closestRing.shouldRemove = true;
+            ball.lastPassedRadius = closestRing.r + ball.r + 2;
+            ball.x = cx + nx * (closestRing.r + ball.r + 3);
+            ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
-        closestRing.shouldRemove = true;
     } 
-    else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius + ball.r) {
+    else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
         const e = (s + closestRing.gapSize) % (Math.PI * 2);
         const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
         if (!inGap && ball.cooldown === 0) {
-            const nx = dx / dist, ny = dy / dist;
             const dot = ball.vx * nx + ball.vy * ny;
-
             if (dot > 0) {
                 closestRing.hitCount++;
-                if (closestRing.hitCount >= 25) {
-                    passSound();
-                    closestRing.shouldRemove = true;
-                    ball.lastPassedRadius = closestRing.r;
-                } else {
-                    let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                    if (speed < ball.maxSpeed) speed *= 1.05;
-                    ball.vx -= 2 * dot * nx;
-                    ball.vy -= 2 * dot * ny;
-                    const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                    ball.vx = (ball.vx / newSpeed) * speed;
-                    ball.vy = (ball.vy / newSpeed) * speed;
-                    ball.x = cx + nx * (closestRing.r - ball.r - 2);
-                    ball.y = cy + ny * (closestRing.r - ball.r - 2);
-                    ball.cooldown = 2;
-                    collisionSound();
-                }
+                let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (speed < ball.maxSpeed) speed *= 1.05;
+
+                ball.vx -= 2 * dot * nx;
+                ball.vy -= 2 * dot * ny;
+
+                const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                ball.vx = (ball.vx / newSpeed) * speed;
+                ball.vy = (ball.vy / newSpeed) * speed;
+
+                ball.x = cx + nx * (closestRing.r - ball.r - 2);
+                ball.y = cy + ny * (closestRing.r - ball.r - 2);
+                ball.cooldown = 2;
+                collisionSound();
             }
         }
     }
@@ -217,32 +230,25 @@ function physicsStep() {
 
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
-    
-    // デバッグ表示の更新
-    debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>
-                         REMAINING  : ${rings.length}<br>
-                         TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}`;
-
+    if (isDebug) {
+        debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>REMAINING  : ${rings.length}<br>TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}`;
+    }
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     rings.forEach(r => {
-        let hue = (r.colorMode === "alternate") ? 
-                  (r.index % 2 === 0 ? r.colorA : r.colorB) : 
-                  r.colorA + (r.colorB - r.colorA) * (r.index / (totalRingsAtStart - 1 || 1));
-        
+        let hue = (r.colorMode === "alternate") ? (r.index % 2 === 0 ? r.colorA : r.colorB) : r.colorA + (r.colorB - r.colorA) * (r.index / (totalRingsAtStart - 1 || 1));
         ctx.beginPath();
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
         
-        // ターゲットリングを少し明るく強調（デバッグ用視覚効果）
-        const isTarget = (r.index === currentTargetIndex);
+        // デバッグONの時のみ強調表示
+        const isTarget = isDebug && (r.index === currentTargetIndex);
         ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${isTarget ? r.light + 20 : r.light}%)`;
         ctx.lineWidth = isTarget ? 6 : 4;
         ctx.stroke();
     });
-
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
     ctx.fillStyle = "white";
