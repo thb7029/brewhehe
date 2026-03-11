@@ -122,13 +122,24 @@ function physics() {
                 if (!r.passed) { playClr(); r.passed = true; }
             } else if (ball.cd === 0) {
                 const nx = dx / dist, ny = dy / dist;
-                const dot = ball.vx * nx + ball.vy * ny;
                 
-                // 跳ね返り処理：内側に押し戻す
-                ball.vx -= (1 + res) * dot * nx;
-                ball.vy -= (1 + res) * dot * ny;
-                ball.x = cx + nx * (r.r - ball.r - 0.1); 
-                ball.y = cy + ny * (r.r - ball.r - 0.1);
+                // 現在の速さ（エネルギー）を記録
+                const speedBefore = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                
+                // 反射ベクトル計算 (R = V - 2 * (V・N) * N)
+                const dot = ball.vx * nx + ball.vy * ny;
+                ball.vx -= 2 * dot * nx;
+                ball.vy -= 2 * dot * ny;
+
+                // 【重要】速さを衝突前と全く同じに強制リセット（減衰を完全に殺す）
+                const speedAfter = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                ball.vx = (ball.vx / speedAfter) * speedBefore;
+                ball.vy = (ball.vy / speedAfter) * speedBefore;
+
+                // リングの内側へ押し戻す（少し余裕を持たせて1.0離す）
+                ball.x = cx + nx * (r.r - ball.r - 1.0); 
+                ball.y = cy + ny * (r.r - ball.r - 1.0);
+                
                 ball.cd = 3; 
                 playAtk();
             }
