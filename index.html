@@ -25,7 +25,7 @@
 
 <canvas id="c" width="600" height="600"></canvas>
 <div id="m">SOUND: OFF</div>
-<div id="hint">ver0.1 Ring will be shattered out after 25 hits to prevent stucking.</div>
+<div id="hint">Rings shatter after 25 hits to prevent stuck.</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -88,7 +88,8 @@ function reset() {
     ball = { 
         x: cx, y: cy, 
         vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
-        r: 5, cooldown: 0, escapeFrames: 0,
+        r: 5, cooldown: 0, 
+        lastPassedRadius: 0, // 最後に抜けた円の半径を記録
         baseSpeed: initSpeed, maxSpeed: initSpeed * 2.5 
     };
     rings = [];
@@ -134,15 +135,17 @@ function physicsStep() {
     ball.y += ball.vy;
 
     if (ball.cooldown > 0) ball.cooldown--;
-    if (ball.escapeFrames > 0) ball.escapeFrames--;
 
     for (let ring of rings) ring.angle += ring.speed;
 
     for (let i = 0; i < rings.length; i++) {
         const ring = rings[i];
+        if (ring.shouldRemove) continue;
+
         let dx = ball.x - cx, dy = ball.y - cy;
         let dist = Math.sqrt(dx * dx + dy * dy);
 
+        // A: 通過（脱出）判定
         if (dist > ring.r + ball.r) {
             if (!ring.passed) {
                 const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
@@ -152,14 +155,17 @@ function physicsStep() {
                 if (inGap) { 
                     passSound(); 
                     ring.passed = true;
-                    ball.escapeFrames = 6;
+                    // 無敵時間の代わりに「今抜けた半径」を記録
+                    ball.lastPassedRadius = ring.r;
                 }
             }
             ring.shouldRemove = true;
             continue;
         }
 
-        if (dist > ring.r - ball.r && ball.escapeFrames === 0) {
+        // B: 衝突判定
+        // 修正：最後の通過半径を完全に超えるまでは、次のリングの衝突判定を行わない
+        if (dist > ring.r - ball.r && dist > ball.lastPassedRadius + ball.r) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
             const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
             const e = (s + ring.gapSize) % (Math.PI * 2);
@@ -174,7 +180,7 @@ function physicsStep() {
                     if (ring.hitCount >= 25) {
                         passSound();
                         ring.shouldRemove = true;
-                        ball.escapeFrames = 4;
+                        ball.lastPassedRadius = ring.r; // 破壊時もそこまでは無敵
                         continue;
                     }
 
