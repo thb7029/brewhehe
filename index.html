@@ -15,12 +15,17 @@
         }
         #m:hover { background: rgba(255, 255, 255, 0.2); }
         #m.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
+        #hint { 
+            position: absolute; top: 65px; left: 20px; color: #444; font-size: 10px;
+            letter-spacing: 0.5px; pointer-events: none; user-select: none;
+        }
     </style>
 </head>
 <body>
 
 <canvas id="c" width="600" height="600"></canvas>
 <div id="m">SOUND: OFF</div>
+<div id="hint">ver0.1 Ring will be shattered out after 25 hits to prevent stucking.</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
@@ -133,15 +138,11 @@ function physicsStep() {
 
     for (let ring of rings) ring.angle += ring.speed;
 
-    // 内側から外側へ判定（リングインデックス順）
     for (let i = 0; i < rings.length; i++) {
         const ring = rings[i];
-        
-        // 判定直前に最新距離を再計算
         let dx = ball.x - cx, dy = ball.y - cy;
         let dist = Math.sqrt(dx * dx + dy * dy);
 
-        // A: 脱出判定（外側へ出たか）
         if (dist > ring.r + ball.r) {
             if (!ring.passed) {
                 const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
@@ -151,14 +152,13 @@ function physicsStep() {
                 if (inGap) { 
                     passSound(); 
                     ring.passed = true;
-                    ball.escapeFrames = 6; // 無敵付与
+                    ball.escapeFrames = 6;
                 }
             }
             ring.shouldRemove = true;
             continue;
         }
 
-        // B: 衝突判定
         if (dist > ring.r - ball.r && ball.escapeFrames === 0) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
             const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
@@ -188,7 +188,6 @@ function physicsStep() {
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
 
-                    // 最新座標を内側に押し戻す（次のリング判定への影響を防ぐ）
                     ball.x = cx + nx * (ring.r - ball.r - 3);
                     ball.y = cy + ny * (ring.r - ball.r - 3);
                     ball.cooldown = 2;
@@ -197,7 +196,6 @@ function physicsStep() {
             }
         }
     }
-    // 不要になったリングをまとめて削除
     rings = rings.filter(r => !r.shouldRemove);
 }
 
