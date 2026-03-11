@@ -33,7 +33,6 @@ const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","mid
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-// -------- AUDIO --------
 async function loadAtkSound(url) {
     atkBuffer = null;
     const res = await fetch(url), buf = await res.arrayBuffer();
@@ -71,7 +70,6 @@ mBtn.onclick = () => {
     mBtn.className = isMuted ? '' : 'on';
 };
 
-// -------- RESET --------
 function reset() {
     const initSpeed = 0.8;
     const ang = Math.random() * Math.PI * 2;
@@ -80,7 +78,7 @@ function reset() {
         vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
         r: 5, cooldown: 0, 
         baseSpeed: initSpeed, 
-        maxSpeed: initSpeed * 2.5 // 250%上限
+        maxSpeed: initSpeed * 2.5 
     };
     rings = [];
     
@@ -92,10 +90,8 @@ function reset() {
 
     ringCount = 6 + Math.floor(Math.random() * 10);
     const spacing = 200 / (ringCount - 1);
-
     const baseSpeed = Math.random() * 0.025 + 0.01; 
     let stepFactor = (Math.random() * 0.4) - 0.2; 
-    // 等速（揃いっぱなし）を避けるためのガード
     if (Math.abs(stepFactor) < 0.08) stepFactor = 0.08 * (stepFactor < 0 ? -1 : 1);
 
     const mode = Math.floor(Math.random() * 3);
@@ -103,16 +99,15 @@ function reset() {
 
     for (let i = 0; i < ringCount; i++) {
         let dir = mode === 2 ? (i % 2 === 0 ? 1 : -1) : (mode === 1 ? -1 : 1);
-        let currentSpeed = baseSpeed * (1 + i * stepFactor) * dir;
-
         rings.push({
             r: 65 + spacing * i,
             gap: baseGap,
-            gapSize: Math.PI / 3,
+            gapSize: (Math.PI * 2) / 5, // 穴の広さを 1/5 に拡大
             angle: 0,
-            speed: currentSpeed,
+            speed: baseSpeed * (1 + i * stepFactor) * dir,
             index: i,
             passed: false,
+            hitCount: 0, // 衝突回数をカウント
             colorMode, colorA: hueA, colorB: hueB,
             sat: baseSat, light: baseLight
         });
@@ -122,7 +117,6 @@ function reset() {
     loadMidi(pick(midiFiles));
 }
 
-// -------- PHYSICS --------
 function physicsStep() {
     ball.vy += gravity / steps;
     ball.x += ball.vx;
@@ -137,7 +131,6 @@ function physicsStep() {
     for (let i = rings.length - 1; i >= 0; i--) {
         const ring = rings[i];
 
-        // 外側への脱出判定
         if (dist > ring.r + ball.r) {
             if (!ring.passed) {
                 const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
@@ -150,7 +143,6 @@ function physicsStep() {
             continue;
         }
 
-        // 衝突判定
         if (dist > ring.r - ball.r) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
             const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
@@ -161,24 +153,29 @@ function physicsStep() {
                 const nx = dx / dist, ny = dy / dist;
                 const dot = ball.vx * nx + ball.vy * ny;
 
-                // 中心から外へ向かっている時だけ跳ね返す（穴抜けバグ対策）
                 if (dot > 0) {
-                    let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                    ring.hitCount++;
                     
-                    // 加速（5%ずつ、上限250%まで）
+                    // 【強制破壊】25回以上衝突したらリングを消す
+                    if (ring.hitCount >= 25) {
+                        passSound();
+                        rings.splice(i, 1);
+                        continue;
+                    }
+
+                    let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     if (speed < ball.maxSpeed) speed *= 1.05;
 
                     ball.vx -= 2 * dot * nx;
                     ball.vy -= 2 * dot * ny;
 
-                    // 速度の正規化と再適用（無限反発）
                     const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
 
-                    // 位置補正
-                    ball.x = cx + nx * (ring.r - ball.r - 2);
-                    ball.y = cy + ny * (ring.r - ball.r - 2);
+                    // 押し戻し距離をわずかに増やしてスタック防止
+                    ball.x = cx + nx * (ring.r - ball.r - 2.5);
+                    ball.y = cy + ny * (ring.r - ball.r - 2.5);
 
                     ball.cooldown = 2;
                     collisionSound();
@@ -188,7 +185,6 @@ function physicsStep() {
     }
 }
 
-// -------- UPDATE & DRAW --------
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
@@ -203,7 +199,10 @@ function draw() {
 
         ctx.beginPath();
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
-        ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${r.light}%)`;
+        
+        // 衝突回数が溜まると少しずつ白っぽくなる警告演出（任意）
+        let l = r.light + (r.hitCount * 1.5);
+        ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${Math.min(l, 90)}%)`;
         ctx.lineWidth = 4;
         ctx.stroke();
     });
