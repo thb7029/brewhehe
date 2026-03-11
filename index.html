@@ -33,6 +33,7 @@ const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","mid
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
+// -------- AUDIO --------
 async function loadAtkSound(url) {
     atkBuffer = null;
     const res = await fetch(url), buf = await res.arrayBuffer();
@@ -79,7 +80,7 @@ function reset() {
         vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
         r: 5, cooldown: 0, 
         baseSpeed: initSpeed, 
-        maxSpeed: initSpeed * 2.5 // 加速上限を250%に強化
+        maxSpeed: initSpeed * 2.5 // 250%上限
     };
     rings = [];
     
@@ -92,11 +93,9 @@ function reset() {
     ringCount = 6 + Math.floor(Math.random() * 10);
     const spacing = 200 / (ringCount - 1);
 
-    // 中心の基準速度
     const baseSpeed = Math.random() * 0.025 + 0.01; 
-    
-    // 【修正】stepFactorの絶対値を 0.08 以上にして、必ずズレるように設定
     let stepFactor = (Math.random() * 0.4) - 0.2; 
+    // 等速（揃いっぱなし）を避けるためのガード
     if (Math.abs(stepFactor) < 0.08) stepFactor = 0.08 * (stepFactor < 0 ? -1 : 1);
 
     const mode = Math.floor(Math.random() * 3);
@@ -104,8 +103,6 @@ function reset() {
 
     for (let i = 0; i < ringCount; i++) {
         let dir = mode === 2 ? (i % 2 === 0 ? 1 : -1) : (mode === 1 ? -1 : 1);
-        
-        // 外側ほど速くなるか、遅くなるか（必ず一定の差が出る）
         let currentSpeed = baseSpeed * (1 + i * stepFactor) * dir;
 
         rings.push({
@@ -125,6 +122,7 @@ function reset() {
     loadMidi(pick(midiFiles));
 }
 
+// -------- PHYSICS --------
 function physicsStep() {
     ball.vy += gravity / steps;
     ball.x += ball.vx;
@@ -139,7 +137,7 @@ function physicsStep() {
     for (let i = rings.length - 1; i >= 0; i--) {
         const ring = rings[i];
 
-        // 完全に外に出た判定
+        // 外側への脱出判定
         if (dist > ring.r + ball.r) {
             if (!ring.passed) {
                 const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
@@ -152,7 +150,7 @@ function physicsStep() {
             continue;
         }
 
-        // 衝突判定：リングの半径付近にボールがいる場合
+        // 衝突判定
         if (dist > ring.r - ball.r) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
             const s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2);
@@ -163,21 +161,22 @@ function physicsStep() {
                 const nx = dx / dist, ny = dy / dist;
                 const dot = ball.vx * nx + ball.vy * ny;
 
+                // 中心から外へ向かっている時だけ跳ね返す（穴抜けバグ対策）
                 if (dot > 0) {
                     let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     
-                    // 【加速強化】当たるたびに 5% 加速
-                    if (speed < ball.maxSpeed) {
-                        speed *= 1.05; 
-                    }
+                    // 加速（5%ずつ、上限250%まで）
+                    if (speed < ball.maxSpeed) speed *= 1.05;
 
                     ball.vx -= 2 * dot * nx;
                     ball.vy -= 2 * dot * ny;
 
+                    // 速度の正規化と再適用（無限反発）
                     const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
 
+                    // 位置補正
                     ball.x = cx + nx * (ring.r - ball.r - 2);
                     ball.y = cy + ny * (ring.r - ball.r - 2);
 
@@ -185,11 +184,11 @@ function physicsStep() {
                     collisionSound();
                 }
             }
-            }
         }
     }
 }
 
+// -------- UPDATE & DRAW --------
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
@@ -203,7 +202,6 @@ function draw() {
                   r.colorA + (r.colorB - r.colorA) * (r.index / (ringCount - 1));
 
         ctx.beginPath();
-        // 判定と一致させるため、穴の終点から始点まで描画
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
         ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${r.light}%)`;
         ctx.lineWidth = 4;
