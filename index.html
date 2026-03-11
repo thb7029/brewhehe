@@ -1,3 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>🗿🗿🗿🗿🗿🗿🗿🗿🗿</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
+    <style>
+        body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
+        canvas { background: #111; cursor: pointer; }
+        .btn { 
+            position: absolute; left: 20px; width: 120px; padding: 10px;
+            background: rgba(255, 255, 255, 0.1); color: #888; font-size: 14px; font-weight: bold;
+            text-align: center; cursor: pointer; border: 1px solid #444; border-radius: 4px;
+            transition: 0.2s; z-index: 10; user-select: none;
+        }
+        .btn:hover { background: rgba(255, 255, 255, 0.2); }
+        .btn.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
+        #m { top: 20px; }
+        #d-btn { top: 65px; }
+        #debug-info { 
+            position: absolute; top: 110px; left: 20px; color: #0f0; font-family: monospace; font-size: 11px;
+            background: rgba(0, 0, 0, 0.5); padding: 5px; pointer-events: none; border-left: 2px solid #0f0;
+            display: none;
+        }
+        #hint { 
+            position: absolute; bottom: 20px; left: 20px; color: #444; font-size: 10px;
+            line-height: 1.4; letter-spacing: 0.5px; pointer-events: none; user-select: none;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="c" width="600" height="600"></canvas>
+<div id="m" class="btn">SOUND: OFF</div>
+<div id="d-btn" class="btn">DEBUG: OFF</div>
+<div id="debug-info">DEBUG MODE</div>
+<div id="hint">
+    Rings shatter after 25 hits to prevent stuck.<br>
+    (ver 0.8: collision logic fixed)
+</div>
+
+<script>
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const cx = 300, cy = 300, gravity = 0.1, steps = 4;
+const debugEl = document.getElementById("debug-info");
+const dBtn = document.getElementById("d-btn");
+const mBtn = document.getElementById("m");
+
+let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0;
+let isMuted = true, isDebug = false;
+let totalRingsAtStart = 0;
+let currentTargetIndex = -1;
+let currentHitCount = 0;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const mainGain = audioCtx.createGain();
+mainGain.gain.value = 0.4;
+mainGain.connect(audioCtx.destination);
+
+const atkFiles = ["audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3","audio/atk5.mp3","audio/atk6.mp3","audio/atk7.mp3","audio/atk8.mp3"];
+const clrFiles = ["audio/clr1.mp3","audio/clr2.mp3","audio/clr3.mp3","audio/clr4.mp3","audio/clr5.mp3","audio/clr6.mp3","audio/clr7.mp3","audio/clr8.mp3"];
+const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","midi/melody4.mid","midi/melody5.mid"];
+
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const lerp = (start, end, t) => start * (1 - t) + end * t;
+
+async function loadAtkSound(url) {
+    atkBuffer = null;
+    const res = await fetch(url), buf = await res.arrayBuffer();
+    atkBuffer = await audioCtx.decodeAudioData(buf);
+}
+
+async function loadMidi(file) {
+    const res = await fetch(file), buf = await res.arrayBuffer();
+    const midi = new Midi(buf);
+    melodyNotes = midi.tracks[0].notes.map(n => n.midi);
+    melodyIndex = 0;
+}
+
+function collisionSound() {
+    if (isMuted || !atkBuffer || !melodyNotes.length) return;
+    const s = audioCtx.createBufferSource();
+    s.buffer = atkBuffer;
+    s.playbackRate.value = Math.pow(2, (melodyNotes[melodyIndex] - 48) / 12);
+    s.connect(mainGain);
+    s.start(0);
+    melodyIndex = (melodyIndex + 1) % melodyNotes.length;
+}
+
+function passSound() {
+    if (isMuted) return;
+    const s = clearSound.cloneNode();
+    s.volume = 0.4;
+    s.play();
+}
+
+mBtn.onclick = () => {
+    isMuted = !isMuted;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    mBtn.innerText = `SOUND: ${isMuted ? 'OFF' : 'ON'}`;
+    mBtn.className = isMuted ? 'btn' : 'btn on';
+};
+
+dBtn.onclick = () => {
+    isDebug = !isDebug;
+    dBtn.innerText = `DEBUG: ${isDebug ? 'ON' : 'OFF'}`;
+    dBtn.className = isDebug ? 'btn on' : 'btn';
+    debugEl.style.display = isDebug ? 'block' : 'none';
+};
+
+function reset() {
+    const initSpeed = 0.8;
+    const ang = Math.random() * Math.PI * 2;
+    ball = { 
+        x: cx, y: cy, 
+        vx: Math.cos(ang) * initSpeed, vy: Math.sin(ang) * initSpeed, 
+        r: 5, cooldown: 0, 
+        lastPassedRadius: 0,
+        baseSpeed: initSpeed, maxSpeed: initSpeed * 2.5 
+    };
+    rings = [];
+    
+    // --- 彩色パターンの設定 ---
+    const colorMode = Math.random() < 0.5 ? 'GRADIENT' : 'ALTERNATE';
+    const baseHue = Math.random() * 360;
+    const secondHue = (baseHue + (120 + Math.random() * 60)) % 360; // 交互用：反対に近い色
+    const hueRange = 120 + Math.random() * 60; // グラデーション用：色の広がり
+    
+    ringCount = 6 + Math.floor(Math.random() * 10);
+    totalRingsAtStart = ringCount;
+    const spacing = 200 / (ringCount - 1 || 1);
+    const baseGap = Math.random() * Math.PI * 2;
+    
+    // 回転パターン（0:時計, 1:反時計, 2:交互）
+    const pattern = Math.floor(Math.random() * 3);
+    const minS = 0.015, maxS = 0.045, minDiff = 0.01;
+    let speedA = Math.random() * (maxS - minS) + minS;
+    let speedB = Math.random() * (maxS - minS) + minS;
+    if (Math.abs(speedA - speedB) < minDiff) {
+        speedB = speedA + (speedA > (maxS+minS)/2 ? -minDiff : minDiff);
+    }
+
+    for (let i = 0; i < ringCount; i++) {
+        const t = i / (ringCount - 1 || 1);
+        let s = lerp(speedA, speedB, t);
+        let dir = (pattern === 0) ? 1 : (pattern === 1) ? -1 : (i % 2 === 0 ? 1 : -1);
+
+        // 色の決定
+        let h;
+        if (colorMode === 'GRADIENT') {
+            h = (baseHue + t * hueRange) % 360;
+        } else {
+            // 偶数・奇数で2色を分ける
+            h = (i % 2 === 0) ? baseHue : secondHue;
+        }
+
+        rings.push({
+            r: 65 + spacing * i,
+            gap: baseGap,
+            gapSize: (Math.PI * 2) / 5,
+            angle: 0,
+            speed: s * dir,
+            index: i,
+            passed: false,
+            hitCount: 0,
+            shouldRemove: false,
+            h: h,
+            s: 65 + Math.random() * 25, // 彩度 65-90%
+            l: 45 + Math.random() * 25  // 輝度 45-70%
+        });
+    }
+    
+    loadAtkSound(pick(atkFiles));
+    clearSound = new Audio(pick(clrFiles));
+    loadMidi(pick(midiFiles));
+}
+function physicsStep() {
+    ball.vy += gravity / steps;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    if (ball.cooldown > 0) ball.cooldown--;
+    for (let ring of rings) ring.angle += ring.speed;
+
+    if (rings.length === 0) return;
+
+    const dx = ball.x - cx, dy = ball.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const nx = dx / dist, ny = dy / dist;
+    
+    // 最も近いリングを探す
+    const closestRing = rings.reduce((prev, curr) => (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev);
+    currentTargetIndex = closestRing.index;
+    currentHitCount = closestRing.hitCount;
+
+    // 現在のボールの角度
+    const ballAngle = normalizeAngle(Math.atan2(dy, dx));
+    // 隙間の開始と終了
+    const gapStart = normalizeAngle(closestRing.gap + closestRing.angle);
+    const gapEnd = normalizeAngle(gapStart + closestRing.gapSize);
+
+    // 隙間にいるかどうかの正確な判定
+    let inGap = false;
+    if (gapStart < gapEnd) {
+        inGap = ballAngle >= gapStart && ballAngle <= gapEnd;
+    } else {
+        // 0/2PIを跨いでいる場合
+        inGap = ballAngle >= gapStart || ballAngle <= gapEnd;
+    }
+
+    // 1. 通過判定 (隙間にいて、かつリングの半径を越えようとしている時)
+    if (inGap && dist > closestRing.r) {
+        if (!closestRing.passed) {
+            passSound();
+            closestRing.passed = true;
+            closestRing.shouldRemove = true;
+            // 通過した後は少し外側に押し出す
+            ball.x = cx + nx * (closestRing.r + ball.r + 2);
+            ball.y = cy + ny * (closestRing.r + ball.r + 2);
+        }
+    } 
+    // 2. 衝突判定 (隙間にいない、かつリングの境界に触れた時)
+    else if (!inGap && Math.abs(dist - closestRing.r) < ball.r) {
+        const dot = ball.vx * nx + ball.vy * ny;
+        // 外側に向かって進んでいて、かつリングの内側にいる場合のみ反射
+        if (dot > 0 && dist < closestRing.r && ball.cooldown === 0) {
+            closestRing.hitCount++;
+            
+            // 25回ヒットで強制破壊
+            if (closestRing.hitCount >= 25) {
+                closestRing.shouldRemove = true;
+                return;
+            }
+
+            let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (speed < ball.maxSpeed) speed *= 1.05;
+
+            // 反射ベクトル計算
+            ball.vx -= 2 * dot * nx;
+            ball.vy -= 2 * dot * ny;
+
+            // 速度の再適用
+            const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            ball.vx = (ball.vx / newSpeed) * speed;
+            ball.vy = (ball.vy / newSpeed) * speed;
+
+            // めり込み防止：リングの少し内側に固定
+            ball.x = cx + nx * (closestRing.r - ball.r - 1);
+            ball.y = cy + ny * (closestRing.r - ball.r - 1);
+            ball.cooldown = 2;
+            collisionSound();
+        }
+    }
+
+    if (closestRing.shouldRemove) {
+        rings = rings.filter(r => !r.shouldRemove);
+    }
+}
+function update() {
+    for (let i = 0; i < steps; i++) physicsStep();
+    if (isDebug) debugEl.innerHTML = `TOTAL: ${totalRingsAtStart}<br>LEFT : ${rings.length}<br>TARGET: ${currentTargetIndex}<br>HIT : ${currentHitCount}/25`;
+    if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
+}
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     rings.forEach(r => {
@@ -27,3 +291,9 @@ function draw() {
     ctx.fill();
     ctx.shadowBlur = 0;       // 他の描画に影響しないよう戻す
 }
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+reset();
+loop();
+</script>
+</body>
+</html>
