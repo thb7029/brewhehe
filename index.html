@@ -18,12 +18,12 @@
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
-const cx = 300, cy = 300, gravity = 0.1, steps = 4; 
+const cx = 300, cy = 300, gravity = 0.1, steps = 4;
 let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0, isMuted = true;
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const mainGain = audioCtx.createGain();
-mainGain.gain.value = 0.4; // 音量を40%に
+mainGain.gain.value = 0.4;
 mainGain.connect(audioCtx.destination);
 
 const mBtn = document.getElementById("m");
@@ -33,7 +33,6 @@ const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","mid
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
-// -------- AUDIO --------
 async function loadAtkSound(url) {
     atkBuffer = null;
     const res = await fetch(url), buf = await res.arrayBuffer();
@@ -71,31 +70,31 @@ mBtn.onclick = () => {
     mBtn.className = isMuted ? '' : 'on';
 };
 
-// -------- RESET --------
 function reset() {
     const ang = Math.random() * Math.PI * 2;
     ball = { x: cx, y: cy, vx: Math.cos(ang) * 0.8, vy: Math.sin(ang) * 0.8, r: 5, cooldown: 0 };
     rings = [];
     
-    const colorMode = Math.random() < 0.5 ? "gradient" : "alternate";
     const hueA = Math.random() * 360, hueB = hueA + (Math.random() * 100 + 40);
-    
     ringCount = 6 + Math.floor(Math.random() * 10);
     const spacing = 200 / (ringCount - 1);
     const bSpd = Math.random() * 0.01 + 0.015;
     const mode = Math.floor(Math.random() * 3);
 
+    // 【修正】すべてのリングの穴の初期位置（gap）を一箇所に統一
+    const baseGap = Math.random() * Math.PI * 2;
+
     for (let i = 0; i < ringCount; i++) {
         let dir = mode === 2 ? (i % 2 === 0 ? 1 : -1) : (mode === 1 ? -1 : 1);
         rings.push({
             r: 65 + spacing * i,
-            gap: Math.random() * Math.PI * 2,
+            gap: baseGap, // ここで統一
             gapSize: Math.PI / 3,
             angle: 0,
             speed: bSpd * (1 + i * 0.15) * dir,
             index: i,
             passed: false,
-            colorMode, colorA: hueA, colorB: hueB
+            colorA: hueA, colorB: hueB
         });
     }
     loadAtkSound(pick(atkFiles));
@@ -103,7 +102,6 @@ function reset() {
     loadMidi(pick(midiFiles));
 }
 
-// -------- PHYSICS --------
 function physicsStep() {
     ball.vy += gravity / steps;
     ball.x += ball.vx;
@@ -118,23 +116,18 @@ function physicsStep() {
     for (let i = rings.length - 1; i >= 0; i--) {
         const ring = rings[i];
 
-        // 穴を抜けきった判定（リングの外側に出た瞬間）
         if (dist > ring.r + ball.r) {
             if (!ring.passed) {
                 const a = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
                 const s = (ring.gap + ring.angle + Math.PI * 2) % (Math.PI * 2);
                 const e = (s + ring.gapSize) % (Math.PI * 2);
                 const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
-                if (inGap) {
-                    passSound();
-                    ring.passed = true;
-                }
+                if (inGap) { passSound(); ring.passed = true; }
             }
             rings.splice(i, 1);
             continue;
         }
 
-        // 衝突判定（ボールがリングの境界にいる時）
         if (dist > ring.r - ball.r && dist < ring.r + ball.r) {
             const a = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
             const s = (ring.gap + ring.angle + Math.PI * 2) % (Math.PI * 2);
@@ -145,22 +138,15 @@ function physicsStep() {
                 const nx = dx / dist, ny = dy / dist;
                 const speedBefore = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const dot = ball.vx * nx + ball.vy * ny;
-
-                // 反射ベクトル（完全弾性）
                 ball.vx -= 2 * dot * nx;
                 ball.vy -= 2 * dot * ny;
-
-                // 無限反発（速さを固定）
                 const speedAfter = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 if (speedAfter > 0) {
                     ball.vx = (ball.vx / speedAfter) * speedBefore;
                     ball.vy = (ball.vy / speedAfter) * speedBefore;
                 }
-
-                // めり込み補正
                 ball.x = cx + nx * (ring.r - ball.r - 2);
                 ball.y = cy + ny * (ring.r - ball.r - 2);
-
                 ball.cooldown = 3;
                 collisionSound();
             }
@@ -168,18 +154,16 @@ function physicsStep() {
     }
 }
 
-// -------- UPDATE & DRAW --------
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
-    if (rings.length === 0 && (ball.x < -50 || ball.x > 650 || ball.y < -50 || ball.y > 650)) reset();
+    if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, 600, 600);
     rings.forEach(r => {
-        let hue = r.colorMode === "alternate" ? (r.index % 2 === 0 ? r.colorA : r.colorB) : (r.colorA + (r.colorB - r.colorA) * (r.index / (ringCount - 1)));
+        let hue = r.colorA + (r.colorB - r.colorA) * (r.index / (ringCount - 1));
         ctx.beginPath();
-        // 穴以外の部分を描画（穴の終点から始点まで時計回りに描く）
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
         ctx.strokeStyle = `hsl(${hue}, 70%, 60%)`;
         ctx.lineWidth = 4;
@@ -192,9 +176,7 @@ function draw() {
 }
 
 function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
+    update(); draw(); requestAnimationFrame(loop);
 }
 
 reset();
