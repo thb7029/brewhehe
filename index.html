@@ -36,7 +36,7 @@
 <div id="debug-info">DEBUG MODE</div>
 <div id="hint">
     Rings shatter after 25 hits to prevent stuck.<br>
-    (ver 0.7: Speed logic restored)
+    (ver 0.7: Rotation logic fixed)
 </div>
 
 <script>
@@ -119,20 +119,22 @@ function reset() {
         baseSpeed: initSpeed, maxSpeed: initSpeed * 2.5 
     };
     rings = [];
-    const hueA = Math.random() * 360, hueB = hueA + (Math.random() * 80 + 40);
+    const hueA = Math.random() * 360, hueB = hueA + 60;
     ringCount = 6 + Math.floor(Math.random() * 10);
     totalRingsAtStart = ringCount;
     const spacing = 200 / (ringCount - 1);
     const baseGap = Math.random() * Math.PI * 2;
-
-    // 速度ロジックの再定義
+    
+    // 回転方向を一つに固定 (1 or -1)
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const minS = 0.012, maxS = 0.045, minDiff = 0.012;
-    const innerSpeed = (Math.random() * (maxS - minS) + minS) * dir;
-    let outerSpeed;
-    do { 
-        outerSpeed = (Math.random() * (maxS - minS) + minS) * (Math.random() < 0.7 ? -dir : dir); 
-    } while (Math.abs(Math.abs(innerSpeed) - Math.abs(outerSpeed)) < minDiff);
+    
+    // 速度の範囲を設定（最小・最大の絶対値を決めてから、dirを掛ける）
+    const minS = 0.012, maxS = 0.045;
+    const innerSpeedAbs = Math.random() * (maxS - minS) + minS;
+    const outerSpeedAbs = Math.random() * (maxS - minS) + minS;
+    
+    const innerSpeed = innerSpeedAbs * dir;
+    const outerSpeed = outerSpeedAbs * dir;
 
     for (let i = 0; i < ringCount; i++) {
         rings.push({
@@ -176,6 +178,7 @@ function physicsStep() {
     const e = (s + closestRing.gapSize) % (Math.PI * 2);
     const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
+    // 強制破壊判定（穴にいてもいなくても25回叩けば壊れる、または穴を越えたら壊れる）
     if (closestRing.hitCount >= 25 || (inGap && dist > closestRing.r + ball.r - 1)) {
         if (dist > closestRing.r - ball.r) {
             if (!closestRing.passed) { passSound(); closestRing.passed = true; }
@@ -185,6 +188,7 @@ function physicsStep() {
             ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
     } 
+    // 通常の衝突判定
     else if (!inGap && Math.abs(dist - closestRing.r) < ball.r && dist > ball.lastPassedRadius) {
         const dot = ball.vx * nx + ball.vy * ny;
         if (dot > 0 && ball.cooldown === 0) {
