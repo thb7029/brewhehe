@@ -35,8 +35,8 @@
 <div id="d-btn" class="btn">DEBUG: OFF</div>
 <div id="debug-info">DEBUG MODE</div>
 <div id="hint">
-    Rings shatter after 25 hits.<br>
-    (ver 1.1: Adjust Color Logic)
+    NOTE:Rings shatter after 25 hits.<br>
+    (ver 1.21: Add sound & midi)
 </div>
 
 <script>
@@ -57,9 +57,12 @@ const mainGain = audioCtx.createGain();
 mainGain.gain.value = 0.4;
 mainGain.connect(audioCtx.destination);
 
-const atkFiles = ["audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3","audio/atk5.mp3","audio/atk6.mp3","audio/atk7.mp3","audio/atk8.mp3"];
-const clrFiles = ["audio/clr1.mp3","audio/clr2.mp3","audio/clr3.mp3","audio/clr4.mp3","audio/clr5.mp3","audio/clr6.mp3","audio/clr7.mp3","audio/clr8.mp3"];
-const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","midi/melody4.mid","midi/melody5.mid"];
+const atkFiles = ["audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3","audio/atk5.mp3","audio/atk6.mp3","audio/atk7.mp3","audio/atk8.mp3",
+                  "audio/atk9.mp3","audio/atk10.mp3","audio/atk11.mp3","audio/atk12.mp3","audio/atk13.mp3","audio/atk14.mp3","audio/atk15.mp3","audio/atk16.mp3"];
+const clrFiles = ["audio/clr1.mp3","audio/clr2.mp3","audio/clr3.mp3","audio/clr4.mp3","audio/clr5.mp3","audio/clr6.mp3","audio/clr7.mp3","audio/clr8.mp3","audio/clr9.mp3","audio/clr10.mp3",
+                  "audio/clr11.mp3","audio/clr12.mp3","audio/clr13.mp3","audio/clr14.mp3","audio/clr15.mp3","audio/clr16.mp3","audio/clr17.mp3","audio/clr18.mp3","audio/clr19.mp3","audio/clr20.mp3"];
+const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","midi/melody4.mid","midi/melody5.mid",
+                   "midi/melody6.mid","midi/melody7.mid","midi/melody8.mid","midi/melody9.mid","midi/melody10.mid"];
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const lerp = (start, end, t) => start * (1 - t) + end * t;
