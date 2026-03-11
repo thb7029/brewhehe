@@ -160,7 +160,7 @@ function reset() {
 
     // --- 回転パターンの設計 ---
     const pattern = Math.floor(Math.random() * 3);
-    const minS = 0.015, maxS = 0.045, minDiff = 0.012;
+    const minS = 0.005, maxS = 0.045, minDiff = 0.008;
     let speedInner = Math.random() * (maxS - minS) + minS;
     let speedOuter = Math.random() * (maxS - minS) + minS;
     if (Math.abs(speedInner - speedOuter) < minDiff) {
