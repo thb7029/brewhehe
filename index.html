@@ -38,7 +38,7 @@
 <div id="debug-info">DEBUG MODE</div>
 <div id="hint">
     Rings shatter after 25 hits to prevent stuck.<br>
-    (ver 0.47: Full history documented in comments)
+    (ver 0.5: Debug info expanded)
 </div>
 
 <script>
@@ -52,6 +52,7 @@ let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex
 let isMuted = true, isDebug = false;
 let totalRingsAtStart = 0;
 let currentTargetIndex = -1;
+let currentHitCount = 0;
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const mainGain = audioCtx.createGain();
@@ -167,6 +168,7 @@ function physicsStep() {
 
     if (rings.length === 0) {
         currentTargetIndex = -1;
+        currentHitCount = 0;
         return;
     }
 
@@ -174,15 +176,14 @@ function physicsStep() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const nx = dx / dist, ny = dy / dist;
     
-    // 絶対的空間判定：最短距離にあるリング一つを選定
     const closestRing = rings.reduce((prev, curr) => {
         return (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev;
     });
 
     currentTargetIndex = closestRing.index;
+    currentHitCount = closestRing.hitCount;
     const diff = dist - closestRing.r;
 
-    // A: 脱出・通過判定 (マージンを持たせ境界線をクリアした瞬間にワープ)
     if (diff > ball.r - 1) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
@@ -195,13 +196,11 @@ function physicsStep() {
                 closestRing.passed = true;
             }
             closestRing.shouldRemove = true;
-            // 次のリングへの干渉を防ぐための脱出記録と微小位置補正
             ball.lastPassedRadius = closestRing.r + ball.r + 2;
             ball.x = cx + nx * (closestRing.r + ball.r + 3);
             ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
     } 
-    // B: 衝突判定 (内側ラインでの反射)
     else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
@@ -238,7 +237,7 @@ function physicsStep() {
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
     if (isDebug) {
-        debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>REMAINING  : ${rings.length}<br>TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}`;
+        debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>REMAINING  : ${rings.length}<br>TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}<br>HIT COUNT  : ${currentHitCount} / 25`;
     }
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
 }
