@@ -15,8 +15,12 @@
         }
         #m:hover { background: rgba(255, 255, 255, 0.2); }
         #m.on { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.25); }
+        #debug { 
+            position: absolute; top: 65px; left: 20px; color: #0f0; font-family: monospace; font-size: 11px;
+            background: rgba(0, 0, 0, 0.5); padding: 5px; pointer-events: none; border-left: 2px solid #0f0;
+        }
         #hint { 
-            position: absolute; top: 65px; left: 20px; color: #444; font-size: 10px;
+            position: absolute; bottom: 20px; left: 20px; color: #444; font-size: 10px;
             letter-spacing: 0.5px; pointer-events: none; user-select: none;
         }
     </style>
@@ -25,12 +29,16 @@
 
 <canvas id="c" width="600" height="600"></canvas>
 <div id="m">SOUND: OFF</div>
-<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.2)</div>
+<div id="debug">DEBUG MODE</div>
+<div id="hint">Rings shatter after 25 hits to prevent stuck. (ver 0.25)</div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
 const cx = 300, cy = 300, gravity = 0.1, steps = 4;
+const debugEl = document.getElementById("debug");
 let ball, rings, ringCount, atkBuffer, clearSound, melodyNotes = [], melodyIndex = 0, isMuted = true;
+let totalRingsAtStart = 0;
+let currentTargetIndex = -1;
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const mainGain = audioCtx.createGain();
@@ -99,6 +107,7 @@ function reset() {
     const baseSat = 40 + Math.random() * 50, baseLight = 40 + Math.random() * 30; 
 
     ringCount = 6 + Math.floor(Math.random() * 10);
+    totalRingsAtStart = ringCount;
     const spacing = 200 / (ringCount - 1);
     const baseGap = Math.random() * Math.PI * 2;
 
@@ -138,9 +147,11 @@ function physicsStep() {
 
     for (let ring of rings) ring.angle += ring.speed;
 
-    if (rings.length === 0) return;
+    if (rings.length === 0) {
+        currentTargetIndex = -1;
+        return;
+    }
 
-    // 【絶対的空間判定】最新の距離に基づき、最も近いリングを1つだけ選ぶ
     const dx = ball.x - cx, dy = ball.y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     
@@ -148,10 +159,10 @@ function physicsStep() {
         return (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev;
     });
 
-    // そのリングの判定圏内（±ボール半径）にいるかチェック
+    currentTargetIndex = closestRing.index;
+
     const diff = dist - closestRing.r;
 
-    // 1. 通過（脱出）判定：リングの外側ラインを越えた場合
     if (diff > ball.r) {
         if (!closestRing.passed) {
             const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
@@ -166,7 +177,6 @@ function physicsStep() {
         }
         closestRing.shouldRemove = true;
     } 
-    // 2. 衝突判定：リングの内側ラインに触れており、かつ直前の円を完全に脱出している場合
     else if (Math.abs(diff) < ball.r && dist > ball.lastPassedRadius + ball.r) {
         const a = (Math.atan2(dy, dx) + Math.PI * 10) % (Math.PI * 2);
         const s = (closestRing.gap + closestRing.angle + Math.PI * 10) % (Math.PI * 2);
@@ -186,15 +196,11 @@ function physicsStep() {
                 } else {
                     let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     if (speed < ball.maxSpeed) speed *= 1.05;
-
                     ball.vx -= 2 * dot * nx;
                     ball.vy -= 2 * dot * ny;
-
                     const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                     ball.vx = (ball.vx / newSpeed) * speed;
                     ball.vy = (ball.vy / newSpeed) * speed;
-
-                    // 位置補正：リングの内側にスナップ
                     ball.x = cx + nx * (closestRing.r - ball.r - 2);
                     ball.y = cy + ny * (closestRing.r - ball.r - 2);
                     ball.cooldown = 2;
@@ -204,7 +210,6 @@ function physicsStep() {
         }
     }
 
-    // 削除フラグが立ったリングを掃除
     if (closestRing.shouldRemove) {
         rings = rings.filter(r => !r.shouldRemove);
     }
@@ -212,6 +217,12 @@ function physicsStep() {
 
 function update() {
     for (let i = 0; i < steps; i++) physicsStep();
+    
+    // デバッグ表示の更新
+    debugEl.innerHTML = `TOTAL RINGS: ${totalRingsAtStart}<br>
+                         REMAINING  : ${rings.length}<br>
+                         TARGET IDX : ${currentTargetIndex === -1 ? "NONE" : currentTargetIndex}`;
+
     if (rings.length === 0 && (ball.x < -100 || ball.x > 700 || ball.y < -100 || ball.y > 700)) reset();
 }
 
@@ -220,11 +231,15 @@ function draw() {
     rings.forEach(r => {
         let hue = (r.colorMode === "alternate") ? 
                   (r.index % 2 === 0 ? r.colorA : r.colorB) : 
-                  r.colorA + (r.colorB - r.colorA) * (r.index / (ringCount - 1));
+                  r.colorA + (r.colorB - r.colorA) * (r.index / (totalRingsAtStart - 1 || 1));
+        
         ctx.beginPath();
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
-        ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${r.light}%)`;
-        ctx.lineWidth = 4;
+        
+        // ターゲットリングを少し明るく強調（デバッグ用視覚効果）
+        const isTarget = (r.index === currentTargetIndex);
+        ctx.strokeStyle = `hsl(${hue}, ${r.sat}%, ${isTarget ? r.light + 20 : r.light}%)`;
+        ctx.lineWidth = isTarget ? 6 : 4;
         ctx.stroke();
     });
 
