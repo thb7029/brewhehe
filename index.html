@@ -36,7 +36,7 @@
 <div id="debug-info">DEBUG MODE</div>
 <div id="hint">
     Rings shatter after 25 hits to prevent stuck.<br>
-    (ver 0.6: Fixed hit-count priority)
+    (ver 0.7: Speed logic restored)
 </div>
 
 <script>
@@ -119,14 +119,20 @@ function reset() {
         baseSpeed: initSpeed, maxSpeed: initSpeed * 2.5 
     };
     rings = [];
-    const hueA = Math.random() * 360, hueB = hueA + 60;
+    const hueA = Math.random() * 360, hueB = hueA + (Math.random() * 80 + 40);
     ringCount = 6 + Math.floor(Math.random() * 10);
     totalRingsAtStart = ringCount;
     const spacing = 200 / (ringCount - 1);
     const baseGap = Math.random() * Math.PI * 2;
+
+    // 速度ロジックの再定義
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const innerSpeed = (Math.random() * 0.03 + 0.01) * dir;
-    const outerSpeed = (Math.random() * 0.03 + 0.01) * -dir;
+    const minS = 0.012, maxS = 0.045, minDiff = 0.012;
+    const innerSpeed = (Math.random() * (maxS - minS) + minS) * dir;
+    let outerSpeed;
+    do { 
+        outerSpeed = (Math.random() * (maxS - minS) + minS) * (Math.random() < 0.7 ? -dir : dir); 
+    } while (Math.abs(Math.abs(innerSpeed) - Math.abs(outerSpeed)) < minDiff);
 
     for (let i = 0; i < ringCount; i++) {
         rings.push({
@@ -170,7 +176,6 @@ function physicsStep() {
     const e = (s + closestRing.gapSize) % (Math.PI * 2);
     const inGap = s < e ? (a > s && a < e) : (a > s || a < e);
 
-    // 1. 強制破壊判定（穴にいてもいなくても25回叩けば壊れる）
     if (closestRing.hitCount >= 25 || (inGap && dist > closestRing.r + ball.r - 1)) {
         if (dist > closestRing.r - ball.r) {
             if (!closestRing.passed) { passSound(); closestRing.passed = true; }
@@ -180,7 +185,6 @@ function physicsStep() {
             ball.y = cy + ny * (closestRing.r + ball.r + 3);
         }
     } 
-    // 2. 通常の衝突判定（穴にいない時のみ）
     else if (!inGap && Math.abs(dist - closestRing.r) < ball.r && dist > ball.lastPassedRadius) {
         const dot = ball.vx * nx + ball.vy * ny;
         if (dot > 0 && ball.cooldown === 0) {
