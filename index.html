@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>🗿 Rotating Ring Physics 🗿</title>
+    <title>🗿the moai🗿</title>
     <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
@@ -35,13 +35,13 @@
 <div id="d-btn" class="btn">DEBUG: OFF</div>
 <div id="debug-info">DEBUG MODE</div>
 <div id="hint">
-    Rings shatter after 25 hits to prevent stuck.<br>
-    (ver 0.8: Improved Collision & Colors)
+    Rings shatter after 25 hits.<br>
+    (ver 0.9: Refined Colors)
 </div>
 
 <script>
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
-const cx = 300, cy = 300, gravity = 0.1, steps = 6; // 精度向上のためstepsを増加
+const cx = 300, cy = 300, gravity = 0.1, steps = 6;
 const debugEl = document.getElementById("debug-info");
 const dBtn = document.getElementById("d-btn");
 const mBtn = document.getElementById("m");
@@ -57,7 +57,6 @@ const mainGain = audioCtx.createGain();
 mainGain.gain.value = 0.4;
 mainGain.connect(audioCtx.destination);
 
-// サンプルURL（環境に合わせて変更してください）
 const atkFiles = ["audio/atk1.mp3","audio/atk2.mp3","audio/atk3.mp3","audio/atk4.mp3","audio/atk5.mp3","audio/atk6.mp3","audio/atk7.mp3","audio/atk8.mp3"];
 const clrFiles = ["audio/clr1.mp3","audio/clr2.mp3","audio/clr3.mp3","audio/clr4.mp3","audio/clr5.mp3","audio/clr6.mp3","audio/clr7.mp3","audio/clr8.mp3"];
 const midiFiles = ["midi/melody1.mid","midi/melody2.mid","midi/melody3.mid","midi/melody4.mid","midi/melody5.mid"];
@@ -73,7 +72,7 @@ async function loadAtkSound(url) {
     try {
         const res = await fetch(url), buf = await res.arrayBuffer();
         atkBuffer = await audioCtx.decodeAudioData(buf);
-    } catch(e) { console.log("Sound load failed (expected if local)"); }
+    } catch(e) { console.log("Sound load failed"); }
 }
 
 async function loadMidi(file) {
@@ -83,7 +82,6 @@ async function loadMidi(file) {
         melodyNotes = midi.tracks[0].notes.map(n => n.midi);
         melodyIndex = 0;
     } catch(e) { 
-        // フォールバック用の音階
         melodyNotes = [60, 62, 64, 65, 67, 69, 71, 72]; 
     }
 }
@@ -138,10 +136,12 @@ function reset() {
     // 彩色モード (0: グラデーション, 1: 2色交互)
     const colorMode = Math.random() < 0.5 ? 0 : 1;
     const baseHue = Math.random() * 360;
-    const altHue = (baseHue + 120 + Math.random() * 60) % 360;
-    const hueRange = 120 + Math.random() * 60;
+    
+    // グラデーション時は色相の変化を小さく(30-80度程度)して調和させる
+    const hueRange = 30 + Math.random() * 50; 
+    // 交互時はあえて少し離れた色を選ぶ
+    const altHue = (baseHue + 40 + Math.random() * 140) % 360;
 
-    // 回転パターン (0: 時計, 1: 反時計, 2: 交互)
     const pattern = Math.floor(Math.random() * 3);
     const minS = 0.015, maxS = 0.045, minDiff = 0.012;
     let speedA = Math.random() * (maxS - minS) + minS;
@@ -165,9 +165,10 @@ function reset() {
             passed: false,
             hitCount: 0,
             shouldRemove: false,
+            // 彩度(S)と明度(L)の範囲を広げ、低彩度・低明度も許容する
             h: colorMode === 0 ? (baseHue + t * hueRange) % 360 : (i % 2 === 0 ? baseHue : altHue),
-            s: 70 + Math.random() * 20,
-            l: 45 + Math.random() * 20
+            s: 20 + Math.random() * 70, // 20%〜90%
+            l: 20 + Math.random() * 50  // 20%〜70%
         });
     }
     loadAtkSound(pick(atkFiles));
@@ -189,7 +190,6 @@ function physicsStep() {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const nx = dx / dist, ny = dy / dist;
 
-    // 最も近いリングを特定
     const closestRing = rings.reduce((prev, curr) => (Math.abs(dist - curr.r) < Math.abs(dist - prev.r)) ? curr : prev);
     currentTargetIndex = closestRing.index;
     currentHitCount = closestRing.hitCount;
@@ -202,7 +202,6 @@ function physicsStep() {
         ? (ballAngle >= gapStart && ballAngle <= gapEnd) 
         : (ballAngle >= gapStart || ballAngle <= gapEnd);
 
-    // 1. 通過・破壊判定
     if (inGap && dist > closestRing.r) {
         if (!closestRing.passed) {
             passSound();
@@ -212,17 +211,14 @@ function physicsStep() {
             ball.y = cy + ny * (closestRing.r + ball.r + 2);
         }
     } 
-    // 2. 通常衝突判定 (内側から外側へ向かっている時のみ)
     else if (!inGap && Math.abs(dist - closestRing.r) < ball.r) {
         const dot = ball.vx * nx + ball.vy * ny;
         if (dot > 0 && dist < closestRing.r && ball.cooldown === 0) {
             closestRing.hitCount++;
-            
             if (closestRing.hitCount >= 25) {
                 closestRing.shouldRemove = true;
                 return;
             }
-
             let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (speed < ball.maxSpeed) speed *= 1.05;
             ball.vx -= 2 * dot * nx;
@@ -230,7 +226,6 @@ function physicsStep() {
             const newSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             ball.vx = (ball.vx / newSpeed) * speed;
             ball.vy = (ball.vy / newSpeed) * speed;
-            
             ball.x = cx + nx * (closestRing.r - ball.r - 2);
             ball.y = cy + ny * (closestRing.r - ball.r - 2);
             ball.cooldown = 2;
@@ -250,15 +245,6 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // 背景の微かなガイド円
-    ctx.strokeStyle = "rgba(255,255,255,0.03)";
-    ctx.lineWidth = 1;
-    for(let i=0; i<5; i++) {
-        ctx.beginPath();
-        ctx.arc(cx, cy, 70 + i*40, 0, Math.PI*2);
-        ctx.stroke();
-    }
-
     rings.forEach(r => {
         ctx.beginPath();
         ctx.arc(cx, cy, r.r, r.gap + r.angle + r.gapSize, r.gap + r.angle, false);
@@ -266,7 +252,6 @@ function draw() {
         const isTarget = isDebug && (r.index === currentTargetIndex);
         let lightness = r.l;
         if (isTarget) lightness = 80;
-        if (r.hitCount > 10) lightness += (r.hitCount - 10) * 2; // ヒットが進むと白熱する
 
         ctx.strokeStyle = `hsl(${r.h}, ${r.s}%, ${lightness}%)`;
         ctx.lineWidth = isTarget ? 7 : 5;
@@ -274,7 +259,6 @@ function draw() {
         ctx.stroke();
     });
 
-    // ボールの描画
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
     ctx.fillStyle = "white";
