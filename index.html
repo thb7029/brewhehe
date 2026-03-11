@@ -236,80 +236,83 @@ clearSound = new Audio(randomChoice(clrFiles))
 loadMidi(randomChoice(midiFiles))
 
 }
-
 // -------- PHYSICS --------
 
 function physicsStep(){
 
-ball.vy += gravityStep
+    ball.vy += gravityStep
+    ball.x += ball.vx
+    ball.y += ball.vy
 
-ball.x += ball.vx
-ball.y += ball.vy
+    if(ball.cooldown > 0) ball.cooldown--
 
-if(ball.cooldown>0) ball.cooldown--
+    for(let ring of rings){
+        ring.angle += ring.speed
+    }
 
-for(let ring of rings){
-ring.angle += ring.speed
+    let dx = ball.x - cx
+    let dy = ball.y - cy
+    let dist = Math.sqrt(dx*dx + dy*dy)
+
+    for(let i = rings.length - 1; i >= 0; i--){
+        let ring = rings[i]
+
+        // リングの外に出た場合の削除判定
+        if(dist > ring.r + ball.r + 2){
+            rings.splice(i, 1)
+            continue
+        }
+
+        // 衝突判定（ボールがリングの半径に差し掛かったか）
+        // 判定範囲を少し持たせることで貫通を防止
+        if(dist > ring.r - ball.r && dist < ring.r + ball.r){
+
+            let ang = Math.atan2(dy, dx)
+            
+            // 角度を 0 〜 2PI に正規化
+            let a = (ang + Math.PI * 2) % (Math.PI * 2)
+            let s = (ring.gap + ring.angle + Math.PI * 10) % (Math.PI * 2)
+            let e = (s + ring.gapSize) % (Math.PI * 2)
+
+            // 穴の中にいるかどうかの判定
+            let inGap = s < e ? (a > s && a < e) : (a > s || a < e)
+
+            if(inGap){
+                if(!ring.passed){
+                    passSound()
+                    ring.passed = true
+                }
+            } else if(ball.cooldown === 0){
+                // --- 跳ね返り処理 ---
+                let nx = dx / dist
+                let ny = dy / dist
+
+                // 現在の速さを保存（減衰防止用）
+                let speedBefore = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy)
+
+                let dot = ball.vx * nx + ball.vy * ny
+
+                // 反射ベクトル計算（完全弾性衝突）
+                ball.vx -= 2 * dot * nx
+                ball.vy -= 2 * dot * ny
+
+                // 【無限反発】計算誤差を無視して元の速さを再適用
+                let speedAfter = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy)
+                if(speedAfter > 0){
+                    ball.vx = (ball.vx / speedAfter) * speedBefore
+                    ball.vy = (ball.vy / speedAfter) * speedBefore
+                }
+
+                // めり込み防止：リングの内側に強制移動
+                ball.x = cx + nx * (ring.r - ball.r - 1)
+                ball.y = cy + ny * (ring.r - ball.r - 1)
+
+                ball.cooldown = 3 // 連続衝突防止のクールダウン
+                collisionSound()
+            }
+        }
+    }
 }
-
-let dx = ball.x - cx
-let dy = ball.y - cy
-let dist = Math.sqrt(dx*dx + dy*dy)
-
-for(let i=rings.length-1;i>=0;i--){
-
-let ring = rings[i]
-
-if(dist > ring.r){
-rings.splice(i,1)
-continue
-}
-
-if(dist > ring.r - ball.r){
-
-let ang = Math.atan2(dy,dx)
-
-let gapStart = ring.gap + ring.angle
-let gapEnd = gapStart + ring.gapSize
-
-let a=(ang+Math.PI*2)%(Math.PI*2)
-let s=(gapStart+Math.PI*2)%(Math.PI*2)
-let e=(gapEnd+Math.PI*2)%(Math.PI*2)
-
-let inGap = s<e ? (a>s && a<e) : (a>s || a<e)
-
-if(inGap){
-
-if(!ring.passed){
-passSound()
-ring.passed = true
-}
-
-}else if(ball.cooldown===0){
-
-let nx=dx/dist
-let ny=dy/dist
-
-let dot=ball.vx*nx + ball.vy*ny
-
-ball.vx -= (1+restitution)*dot*nx
-ball.vy -= (1+restitution)*dot*ny
-
-ball.x = cx + nx*(ring.r - ball.r)
-ball.y = cy + ny*(ring.r - ball.r)
-
-ball.cooldown = 2
-
-collisionSound()
-
-}
-
-}
-
-}
-
-}
-
 // -------- UPDATE --------
 
 function update(){
